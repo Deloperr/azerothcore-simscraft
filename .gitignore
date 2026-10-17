@@ -1,0 +1,8 @@
+build/
+*.log
+backup/
+server_ip.txt
+server-logs.txt
+dist/
+__pycache__/
+.DS_Store

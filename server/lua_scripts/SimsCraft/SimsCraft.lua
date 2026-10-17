@@ -1,0 +1,6999 @@
+--[[
+    SimsCraft 1.0.0 — The Sims-style life simulation for World of Warcraft 3.3.5a (AzerothCore + mod-ale)
+    https://github.com/Deloperr/azerothcore-simscraft  —  License: GPL-2.0
+    SimsCraft 1.0.0 — жизненный симулятор в стиле «Симс» для World of Warcraft 3.3.5a
+    Платформа: AzerothCore (+mod-playerbots) с Lua-движком mod-ale (Eluna)
+
+    Потребности, настроение, черты, карьера, отношения, свадьбы, дети,
+    каталог мебели и домов с расстановкой «призраком», стройка.
+    Управление — через аддон SimsCraft (клиент) и NPC «Хранитель жизни».
+--]]
+
+local unpack = unpack or table.unpack
+local atan2 = math.atan2 or math.atan
+
+------------------------------------------------------------------------
+-- НАСТРОЙКИ
+------------------------------------------------------------------------
+local CFG = {
+    DEFAULT_LANG        = "en",    -- язык, если клиент не сообщил свой: "en" или "ru" (обычно язык берётся из клиента)
+    LOG_LANG            = "en",    -- язык сообщений в логе сервера
+    DEFAULT_LANG        = "en",    -- язык, если клиент не сообщил свой (ru — русский)
+    TICK_SECONDS        = 20,
+    FAST_TICK_MS        = 2500,    -- как часто «думают» супруг, дети и NPC
+    SAVE_EVERY_TICKS    = 6,
+    SKIP_BOTS           = true,
+    BOT_ACCOUNT_PREFIX  = "RNDBOT",
+    FREEZE_FOR_GM       = false,   -- true: в режиме .gm on потребности не меняются
+    PAUSE_IN_PVP        = true,
+    ADDON_PREFIX        = "SIMSC",
+
+    NPC_ENTRY           = 190100,
+    NPC_TEXT            = 190100,
+
+    DECAY = { hunger = 40, energy = 30, hygiene = 25, fun = 30, social = 25, bladder = 50 },
+
+    TIRED_RUN_SPEED     = 0.75,
+    MAX_TRAITS          = 3,
+    TRAIT_REMOVE_COST   = 5000,
+    SHIFT_SECONDS       = 300,
+    PAY_MULT            = 1.0,
+
+    MAX_OBJECTS         = 80,      -- сколько предметов может поставить один персонаж
+    SELL_REFUND         = 0.5,
+    MOVE_RADIUS         = 12,      -- радиус поиска своего предмета для перестановки/продажи
+    HOUSE_MOVE_RADIUS   = 45,      -- для зданий
+    COMFORT_RADIUS      = 35,      -- предметы в этом радиусе дают «уют»
+    BATH_SECONDS        = 12,
+    TOILET_Z            = 0.15,    -- насколько выше основания унитаза садится персонаж
+    FOAM_ENTRY          = 600990,
+    STEAM_ENTRY         = 600991,
+    BUBBLES_ENTRY       = 600992,
+    BARBER_STOOL        = 601010,
+    HAZE_ENTRY          = 601011,      -- дымка над кроватью
+    WOOHOO_SECONDS      = 14,
+    TWIN_CHANCE         = 0.12,
+    BREAK_CHANCE        = 0.03,        -- шанс поломки после использования
+    BILL_RATE           = 0.01,        -- счёт в неделю = 1% стоимости вашей мебели
+    GUEST_SECONDS       = 600,
+    SIM_WEATHER         = true,        -- погода по сезонам (дождь, снег) у клиента
+    MAX_SPOTS           = 40,      -- меток встроенной мебели в готовых домах
+    HOME_TP_COOLDOWN    = 1800,
+    QUICK_MEAL_PRICE    = 2500,
+    GIFT_PRICE          = 5000,
+
+    -- ИГРОВОЕ ВРЕМЯ (как в Симс): свои сутки, не связанные с реальными
+    DAY_MINUTES         = 48,      -- сколько реальных минут длятся игровые сутки
+    SIM_SKY             = true,    -- менять время суток на небе у клиента под игровые часы
+
+    PREGNANCY_DAYS      = 1,       -- игровых дней до рождения ребёнка
+    BABY_CHANCE         = 0.6,
+    MAX_CHILDREN        = 8,
+    KIDS_FOLLOW_MAX     = 4,
+    KID_STAGE_DAYS      = { 1, 3, 8, 14 }, -- малыш с 1-го игрового дня, ребёнок с 3-го, подросток с 8-го, взрослый с 14-го
+    KID_HAPPY_DECAY     = 6,       -- в игровой час... (в час реального времени), пока ребёнок без внимания
+    KID_DESPAWN_MS      = 30 * 60 * 1000,
+    KIDS_HOME_MAX       = 8,       -- сколько детей одновременно играет у дома
+    MOVE_OUT_WISH_DAYS  = 1,       -- через сколько игровых дней взрослой жизни ребёнок захочет жить отдельно
+    MOVE_OUT_DAYS       = 4,       -- и когда переедет сам, если его не попросить остаться
+
+    -- скорость отношений (в игровых сутках)
+    DAILY_FRIEND        = 20,      -- сколько дружбы можно набрать с одним персонажем за игровые сутки
+    DAILY_ROMANCE       = 12,      -- и романтики
+    DATE_MIN_DAYS       = 1,       -- встречаться — не раньше, чем через N игровых дней после знакомства
+    PROPOSE_MIN_DAYS    = 3,       -- предложение — через N игровых дней отношений
+    BABY_MIN_DAYS       = 1,       -- ребёнок — через N игровых дней брака/отношений
+    SOCIAL_CD = {                  -- откат каждого действия с одним и тем же персонажем (реальные секунды)
+        talk = 60, joke = 90, compliment = 180, hug = 300, gift = 1800, flirt = 300, kiss = 600,
+        date = 1800, propose = 3600, woohoo = 1800, baby = 1800,
+        argue = 120, insult = 120, slap = 300, breakup = 60,
+    },
+
+    -- распорядок
+    WORK_HOURS          = { 9, 17 },   -- супруг-NPC в это время на своём месте работы
+    EVENING_HOUR        = 19,          -- NPC идут отдыхать
+    NIGHT_HOUR          = 23,          -- NPC идут спать
+    MORNING_HOUR        = 7,
+
+    -- «живой мир»: NPC рядом с игроком гуляют, болтают, сидят, работают, танцуют вечером и спят ночью
+    LIFE_ENABLED        = true,
+    LIFE_RADIUS         = 60,
+    LIFE_MAX_ACTIVE     = 16,      -- одновременно занятых NPC вокруг игрока
+    LIFE_START_CHANCE   = 0.5,     -- шанс, что свободный NPC чем-то займётся
+
+    -- супруг дома
+    SPOUSE_RADIUS       = 80,      -- супруг появляется, когда вы ближе этого к дому
+    SPOUSE_LEAVE_RADIUS = 150,
+
+    -- дома: «стены вниз» как в Симс
+    WALLS_DEFAULT       = "auto",  -- auto: скрывать дом, когда вы внутри и камера сверху
+}
+
+local F = {}   -- функции (в отдельной таблице: в Lua не больше 200 локальных переменных)
+local TX = {}  -- тексты и справочники (в одной таблице: в Lua не больше 200 локальных переменных)
+local TE = {
+    APPLAUD = 5, BONK = 13, BOW = 17, CHEER = 21, CHICKEN = 22, DANCE = 34,
+    GREET = 48, HELLO = 55, HUG = 56, KISS = 58, LAUGH = 60, PRAISE = 122,
+    RUDE = 77, SEXY = 80, SLEEP = 87, SPIT = 89, THANK = 97, WAVE = 101,
+    COMFORT = 110, CUDDLE = 111, INSULT = 113, INTRODUCE = 114, SLAP = 130,
+    SOOTHE = 134, TAUNT = 136, TICKLE = 142,
+}
+local EMOTE = { TALK = 1, BOW = 2, WAVE = 3, CHEER = 4, LAUGH = 11, RUDE = 14, CRY = 18, SHY = 24, YES = 273, NO = 274 }
+
+------------------------------------------------------------------------
+-- КАТАЛОГ (сгенерирован tools/gen_catalog.py)
+------------------------------------------------------------------------
+local CATEGORIES = {
+    { key = "bedroom", name = "Спальня" },
+    { key = "kitchen", name = "Кухня" },
+    { key = "bath", name = "Ванная" },
+    { key = "living", name = "Гостиная" },
+    { key = "light", name = "Свет" },
+    { key = "fun", name = "Досуг" },
+    { key = "garden", name = "Сад и двор" },
+    { key = "build", name = "Стройка" },
+    { key = "house", name = "Готовые дома" },
+}
+local CATALOG = {
+    { id = "bed1", cat = "bedroom", name = "Кровать с балдахином", entry = 600000, price = 1200000, kind = "bed", dist = 2.5 },
+    { id = "bed2", cat = "bedroom", name = "Кровать (Темнолесье)", entry = 600001, price = 600000, kind = "bed", dist = 2.5 },
+    { id = "bed3", cat = "bedroom", name = "Кровать (Западный Край)", entry = 600002, price = 500000, kind = "bed", dist = 2.5 },
+    { id = "bed4", cat = "bedroom", name = "Двухъярусная кровать", entry = 600003, price = 400000, kind = "bed", dist = 2.5 },
+    { id = "bed5", cat = "bedroom", name = "Каменное ложе", entry = 600004, price = 800000, kind = "bed", dist = 2.5 },
+    { id = "bed6", cat = "bedroom", name = "Ложе друида", entry = 600005, price = 700000, kind = "bed", dist = 2.5 },
+    { id = "wardrobe1", cat = "bedroom", name = "Резной шкаф", entry = 600006, price = 250000, kind = "wardrobe", dist = 2.5 },
+    { id = "wardrobe2", cat = "bedroom", name = "Дворфийский шкаф", entry = 600007, price = 200000, kind = "wardrobe", dist = 2.5 },
+    { id = "wardrobe3", cat = "bedroom", name = "Гардероб", entry = 600008, price = 150000, kind = "wardrobe", dist = 2.5 },
+    { id = "dresser", cat = "bedroom", name = "Тумбочка с зеркалом", entry = 600009, price = 150000, kind = "vanity", dist = 2.5 },
+    { id = "chest1", cat = "bedroom", name = "Сундук", entry = 600010, price = 80000, kind = "chest", dist = 2.5 },
+    { id = "chest2", cat = "bedroom", name = "Кованый сундук", entry = 600011, price = 100000, kind = "chest", dist = 2.5 },
+    { id = "chest3", cat = "bedroom", name = "Сундук Альянса", entry = 600012, price = 150000, kind = "chest", dist = 2.5 },
+    { id = "chest4", cat = "bedroom", name = "Сундук Орды", entry = 600013, price = 150000, kind = "chest", dist = 2.5 },
+    { id = "pillow", cat = "bedroom", name = "Подушка", entry = 600014, price = 20000, kind = nil, dist = 2.5 },
+    { id = "rug1", cat = "bedroom", name = "Ковёр Штормграда", entry = 600015, price = 60000, kind = nil, dist = 2.5 },
+    { id = "rug2", cat = "bedroom", name = "Ковёр Штормграда (2)", entry = 600016, price = 70000, kind = nil, dist = 2.5 },
+    { id = "rug3", cat = "bedroom", name = "Ковёр тауренов", entry = 600017, price = 80000, kind = nil, dist = 2.5 },
+    { id = "rug4", cat = "bedroom", name = "Узорный ковёр тауренов", entry = 600018, price = 90000, kind = nil, dist = 2.5 },
+    { id = "rug5", cat = "bedroom", name = "Ковёр тауренов (3)", entry = 600019, price = 100000, kind = nil, dist = 2.5 },
+    { id = "rug6", cat = "bedroom", name = "Ковёр тауренов (4)", entry = 600020, price = 110000, kind = nil, dist = 2.5 },
+    { id = "rug7", cat = "bedroom", name = "Длинный ковёр", entry = 600021, price = 120000, kind = nil, dist = 2.5 },
+    { id = "rug8", cat = "bedroom", name = "Меховой ковёр", entry = 600022, price = 130000, kind = nil, dist = 2.5 },
+    { id = "rug9", cat = "bedroom", name = "Даларанский ковёр", entry = 600023, price = 140000, kind = nil, dist = 2.5 },
+    { id = "rug10", cat = "bedroom", name = "Ковёр син'дорай", entry = 600024, price = 150000, kind = nil, dist = 2.5 },
+    { id = "rug11", cat = "bedroom", name = "Большой ковёр син'дорай", entry = 600025, price = 160000, kind = nil, dist = 2.5 },
+    { id = "rug12", cat = "bedroom", name = "Медвежья шкура", entry = 600026, price = 170000, kind = nil, dist = 2.5 },
+    { id = "stove1", cat = "kitchen", name = "Пузатая печка", entry = 600027, price = 300000, kind = "stove", dist = 2.5 },
+    { id = "stove2", cat = "kitchen", name = "Печка траппера", entry = 600028, price = 350000, kind = "stove", dist = 2.5 },
+    { id = "stove3", cat = "kitchen", name = "Настенная печка", entry = 600029, price = 350000, kind = "stove", dist = 2.5 },
+    { id = "stove4", cat = "kitchen", name = "Орочий очаг", entry = 600030, price = 250000, kind = "stove", dist = 2.5 },
+    { id = "stove5", cat = "kitchen", name = "Очаг с огнём", entry = 600031, price = 250000, kind = "stove", dist = 2.5 },
+    { id = "table1", cat = "kitchen", name = "Трактирный стол", entry = 600032, price = 120000, kind = "table", dist = 2.5 },
+    { id = "table2", cat = "kitchen", name = "Маленький столик", entry = 600033, price = 60000, kind = "table", dist = 2.5 },
+    { id = "table3", cat = "kitchen", name = "Трактирный столик", entry = 600034, price = 100000, kind = "table", dist = 2.5 },
+    { id = "table4", cat = "kitchen", name = "Резной дворфийский стол", entry = 600035, price = 150000, kind = "table", dist = 2.5 },
+    { id = "table5", cat = "kitchen", name = "Дворфийский стол", entry = 600036, price = 150000, kind = "table", dist = 2.5 },
+    { id = "table6", cat = "kitchen", name = "Маленький дворфийский стол", entry = 600037, price = 100000, kind = "table", dist = 2.5 },
+    { id = "table7", cat = "kitchen", name = "Стол орков", entry = 600038, price = 120000, kind = "table", dist = 2.5 },
+    { id = "table8", cat = "kitchen", name = "Эльфийский стол", entry = 600039, price = 150000, kind = "table", dist = 2.5 },
+    { id = "table9", cat = "kitchen", name = "Круглый стол", entry = 600040, price = 150000, kind = "table", dist = 2.5 },
+    { id = "table10", cat = "kitchen", name = "Стол Западного Края", entry = 600041, price = 100000, kind = "table", dist = 2.5 },
+    { id = "table11", cat = "kitchen", name = "Большой стол син'дорай", entry = 600042, price = 250000, kind = "table", dist = 2.5 },
+    { id = "table12", cat = "kitchen", name = "Столик син'дорай", entry = 600043, price = 100000, kind = "table", dist = 2.5 },
+    { id = "table13", cat = "kitchen", name = "Столик из Каражана", entry = 600044, price = 300000, kind = "table", dist = 2.5 },
+    { id = "table14", cat = "kitchen", name = "Большой стол из Каражана", entry = 600045, price = 600000, kind = "table", dist = 2.5 },
+    { id = "table15", cat = "kitchen", name = "Стол Темнолесья", entry = 600046, price = 100000, kind = "table", dist = 2.5 },
+    { id = "kitchen1", cat = "kitchen", name = "Трактирная бочка", entry = 600047, price = 30000, kind = nil, dist = 2.5 },
+    { id = "kitchen2", cat = "kitchen", name = "Бочка", entry = 600048, price = 20000, kind = nil, dist = 2.5 },
+    { id = "kitchen3", cat = "kitchen", name = "Дворфийская бочка", entry = 600049, price = 40000, kind = nil, dist = 2.5 },
+    { id = "kitchen4", cat = "kitchen", name = "Бочка с фруктами", entry = 600050, price = 40000, kind = nil, dist = 2.5 },
+    { id = "kitchen5", cat = "kitchen", name = "Пивной бочонок", entry = 600051, price = 50000, kind = nil, dist = 2.5 },
+    { id = "kitchen6", cat = "kitchen", name = "Пивная стойка", entry = 600052, price = 150000, kind = nil, dist = 2.5 },
+    { id = "kitchen7", cat = "kitchen", name = "Пивные бочки", entry = 600053, price = 200000, kind = nil, dist = 2.5 },
+    { id = "kitchen8", cat = "kitchen", name = "Ящик", entry = 600054, price = 20000, kind = nil, dist = 2.5 },
+    { id = "kitchen9", cat = "kitchen", name = "Ящик с зерном", entry = 600055, price = 20000, kind = nil, dist = 2.5 },
+    { id = "tub", cat = "bath", name = "Бочка-купель", entry = 600056, price = 300000, kind = "tub", dist = 2.5 },
+    { id = "basin", cat = "bath", name = "Таз для умывания", entry = 600057, price = 150000, kind = "washbasin", dist = 2.5 },
+    { id = "toilet", cat = "bath", name = "Уборная", entry = 600058, price = 200000, kind = "toilet", dist = 2.5 },
+    { id = "well2", cat = "bath", name = "Даларанский колодец", entry = 600059, price = 600000, kind = "washbasin", dist = 2.5 },
+    { id = "seat1", cat = "living", name = "Простой стул", entry = 600060, price = 50000, kind = nil, dist = 2.5, seat = true },
+    { id = "seat2", cat = "living", name = "Стул", entry = 600061, price = 60000, kind = nil, dist = 2.5, seat = true },
+    { id = "seat3", cat = "living", name = "Резное кресло", entry = 600062, price = 100000, kind = nil, dist = 2.5, seat = true },
+    { id = "seat4", cat = "living", name = "Стул Западного Края", entry = 600063, price = 50000, kind = nil, dist = 2.5, seat = true },
+    { id = "seat5", cat = "living", name = "Дворфийское кресло", entry = 600064, price = 120000, kind = nil, dist = 2.5, seat = true },
+    { id = "seat6", cat = "living", name = "Стул Стальгорна", entry = 600065, price = 80000, kind = nil, dist = 2.5, seat = true },
+    { id = "seat7", cat = "living", name = "Резной стул Стальгорна", entry = 600066, price = 120000, kind = nil, dist = 2.5, seat = true },
+    { id = "seat8", cat = "living", name = "Простой стул Стальгорна", entry = 600067, price = 60000, kind = nil, dist = 2.5, seat = true },
+    { id = "seat9", cat = "living", name = "Стул син'дорай", entry = 600068, price = 100000, kind = nil, dist = 2.5, seat = true },
+    { id = "seat10", cat = "living", name = "Кресло син'дорай", entry = 600069, price = 120000, kind = nil, dist = 2.5, seat = true },
+    { id = "seat11", cat = "living", name = "Даларанское кресло", entry = 600070, price = 150000, kind = nil, dist = 2.5, seat = true },
+    { id = "seat12", cat = "living", name = "Даларанский стул", entry = 600071, price = 100000, kind = nil, dist = 2.5, seat = true },
+    { id = "seat13", cat = "living", name = "Стул гномов", entry = 600072, price = 80000, kind = nil, dist = 2.5, seat = true },
+    { id = "seat14", cat = "living", name = "Бревно-сиденье", entry = 600073, price = 40000, kind = nil, dist = 2.5, seat = true },
+    { id = "seat15", cat = "living", name = "Стул врайкулов", entry = 600074, price = 80000, kind = nil, dist = 2.5, seat = true },
+    { id = "seat16", cat = "living", name = "Кресло цирюльника", entry = 600075, price = 200000, kind = nil, dist = 2.5, seat = true },
+    { id = "seat17", cat = "living", name = "Трон Чёрного Железа", entry = 600076, price = 3000000, kind = nil, dist = 2.5, seat = true },
+    { id = "seat18", cat = "living", name = "Трон Каражана", entry = 600077, price = 2500000, kind = nil, dist = 2.5, seat = true },
+    { id = "seat19", cat = "living", name = "Трон вождя", entry = 600078, price = 4000000, kind = nil, dist = 2.5, seat = true },
+    { id = "seat20", cat = "living", name = "Трактирная скамья", entry = 600079, price = 80000, kind = nil, dist = 2.5, seat = true },
+    { id = "seat21", cat = "living", name = "Скамья Штормграда", entry = 600080, price = 100000, kind = nil, dist = 2.5, seat = true },
+    { id = "seat22", cat = "living", name = "Скамья Темнолесья", entry = 600081, price = 80000, kind = nil, dist = 2.5, seat = true },
+    { id = "seat23", cat = "living", name = "Скамья орков", entry = 600082, price = 80000, kind = nil, dist = 2.5, seat = true },
+    { id = "seat24", cat = "living", name = "Скамья син'дорай", entry = 600083, price = 100000, kind = nil, dist = 2.5, seat = true },
+    { id = "seat25", cat = "living", name = "Даларанская скамья", entry = 600084, price = 150000, kind = nil, dist = 2.5, seat = true },
+    { id = "seat26", cat = "living", name = "Даларанская скамья (2)", entry = 600085, price = 150000, kind = nil, dist = 2.5, seat = true },
+    { id = "seat27", cat = "living", name = "Гномья скамья со столиком", entry = 600086, price = 250000, kind = nil, dist = 2.5, seat = true },
+    { id = "books1", cat = "living", name = "Книжная полка", entry = 600087, price = 200000, kind = "books", dist = 2.5 },
+    { id = "books2", cat = "living", name = "Книжная полка (2)", entry = 600088, price = 200000, kind = "books", dist = 2.5 },
+    { id = "books3", cat = "living", name = "Книжная полка (3)", entry = 600089, price = 200000, kind = "books", dist = 2.5 },
+    { id = "books4", cat = "living", name = "Полка из аббатства", entry = 600090, price = 200000, kind = "books", dist = 2.5 },
+    { id = "books5", cat = "living", name = "Книжная полка Каражана", entry = 600091, price = 300000, kind = "books", dist = 2.5 },
+    { id = "readtable", cat = "living", name = "Стол для чтения", entry = 600092, price = 150000, kind = "books", dist = 2.5 },
+    { id = "decor1", cat = "living", name = "Стопка книг", entry = 600093, price = 20000, kind = nil, dist = 2.5 },
+    { id = "decor2", cat = "living", name = "Стопка книг (низкая)", entry = 600094, price = 20000, kind = nil, dist = 2.5 },
+    { id = "decor3", cat = "living", name = "Раскрытая книга", entry = 600095, price = 30000, kind = nil, dist = 2.5 },
+    { id = "decor4", cat = "living", name = "Часы с кукушкой", entry = 600096, price = 250000, kind = nil, dist = 2.5 },
+    { id = "decor5", cat = "living", name = "Глобус", entry = 600097, price = 300000, kind = nil, dist = 2.5 },
+    { id = "decor6", cat = "living", name = "Картина", entry = 600098, price = 150000, kind = nil, dist = 2.5 },
+    { id = "decor7", cat = "living", name = "Картина (2)", entry = 600099, price = 150000, kind = nil, dist = 2.5 },
+    { id = "decor8", cat = "living", name = "Картина (3)", entry = 600100, price = 150000, kind = nil, dist = 2.5 },
+    { id = "decor9", cat = "living", name = "Портрет героя-дворфа", entry = 600101, price = 150000, kind = nil, dist = 2.5 },
+    { id = "decor10", cat = "living", name = "Портрет героя-гнома", entry = 600102, price = 150000, kind = nil, dist = 2.5 },
+    { id = "decor11", cat = "living", name = "Портрет героя-человека", entry = 600103, price = 150000, kind = nil, dist = 2.5 },
+    { id = "decor12", cat = "living", name = "Портрет героини-эльфийки", entry = 600104, price = 150000, kind = nil, dist = 2.5 },
+    { id = "decor13", cat = "living", name = "Портрет героя-орка", entry = 600105, price = 150000, kind = nil, dist = 2.5 },
+    { id = "decor14", cat = "living", name = "Портрет Отрёкшегося", entry = 600106, price = 150000, kind = nil, dist = 2.5 },
+    { id = "decor15", cat = "living", name = "Портрет таурена", entry = 600107, price = 150000, kind = nil, dist = 2.5 },
+    { id = "decor16", cat = "living", name = "Портрет тролля", entry = 600108, price = 150000, kind = nil, dist = 2.5 },
+    { id = "decor17", cat = "living", name = "Знамя с грифоном", entry = 600109, price = 100000, kind = nil, dist = 2.5 },
+    { id = "decor18", cat = "living", name = "Знамя Отрёкшихся", entry = 600110, price = 100000, kind = nil, dist = 2.5 },
+    { id = "decor19", cat = "living", name = "Знамя ночных эльфов", entry = 600111, price = 100000, kind = nil, dist = 2.5 },
+    { id = "decor20", cat = "living", name = "Щит на стену", entry = 600112, price = 80000, kind = nil, dist = 2.5 },
+    { id = "decor21", cat = "living", name = "Меч на стену", entry = 600113, price = 80000, kind = nil, dist = 2.5 },
+    { id = "decor22", cat = "living", name = "Бюст", entry = 600114, price = 200000, kind = nil, dist = 2.5 },
+    { id = "decor23", cat = "living", name = "Бюст (2)", entry = 600115, price = 200000, kind = nil, dist = 2.5 },
+    { id = "light1", cat = "light", name = "Фонарный столб", entry = 600116, price = 100000, kind = nil, dist = 2.5 },
+    { id = "light2", cat = "light", name = "Даларанский фонарь", entry = 600117, price = 150000, kind = nil, dist = 2.5 },
+    { id = "light3", cat = "light", name = "Фонарь Степей", entry = 600118, price = 80000, kind = nil, dist = 2.5 },
+    { id = "light4", cat = "light", name = "Тауренский фонарь", entry = 600119, price = 80000, kind = nil, dist = 2.5 },
+    { id = "light5", cat = "light", name = "Фонарь Дарнаса", entry = 600120, price = 120000, kind = nil, dist = 2.5 },
+    { id = "light6", cat = "light", name = "Дренейский фонарь", entry = 600121, price = 120000, kind = nil, dist = 2.5 },
+    { id = "light7", cat = "light", name = "Фонарь", entry = 600122, price = 50000, kind = nil, dist = 2.5 },
+    { id = "light8", cat = "light", name = "Эльфийский фонарь", entry = 600123, price = 50000, kind = nil, dist = 2.5 },
+    { id = "light9", cat = "light", name = "Эльфийский фонарь (2)", entry = 600124, price = 50000, kind = nil, dist = 2.5 },
+    { id = "light10", cat = "light", name = "Красный фонарь син'дорай", entry = 600125, price = 60000, kind = nil, dist = 2.5 },
+    { id = "light11", cat = "light", name = "Праздничный фонарь Альянса", entry = 600126, price = 60000, kind = nil, dist = 2.5 },
+    { id = "light12", cat = "light", name = "Праздничный фонарь Орды", entry = 600127, price = 60000, kind = nil, dist = 2.5 },
+    { id = "light13", cat = "light", name = "Настенная лампа Даларана", entry = 600128, price = 80000, kind = nil, dist = 2.5 },
+    { id = "light14", cat = "light", name = "Свеча", entry = 600129, price = 10000, kind = nil, dist = 2.5 },
+    { id = "light15", cat = "light", name = "Свеча (2)", entry = 600130, price = 10000, kind = nil, dist = 2.5 },
+    { id = "light16", cat = "light", name = "Свечи", entry = 600131, price = 20000, kind = nil, dist = 2.5 },
+    { id = "light17", cat = "light", name = "Романтическая свеча", entry = 600132, price = 30000, kind = nil, dist = 2.5 },
+    { id = "light18", cat = "light", name = "Группа свечей", entry = 600133, price = 30000, kind = nil, dist = 2.5 },
+    { id = "light19", cat = "light", name = "Настенный канделябр", entry = 600134, price = 80000, kind = nil, dist = 2.5 },
+    { id = "light20", cat = "light", name = "Жаровня Штормграда", entry = 600135, price = 120000, kind = nil, dist = 2.5 },
+    { id = "light21", cat = "light", name = "Дворфийская жаровня", entry = 600136, price = 100000, kind = nil, dist = 2.5 },
+    { id = "light22", cat = "light", name = "Жаровня", entry = 600137, price = 80000, kind = nil, dist = 2.5 },
+    { id = "light23", cat = "light", name = "Высокая жаровня", entry = 600138, price = 100000, kind = nil, dist = 2.5 },
+    { id = "light24", cat = "light", name = "Факел", entry = 600139, price = 30000, kind = nil, dist = 2.5 },
+    { id = "light25", cat = "light", name = "Факел (2)", entry = 600140, price = 30000, kind = nil, dist = 2.5 },
+    { id = "light26", cat = "light", name = "Северный факел", entry = 600141, price = 40000, kind = nil, dist = 2.5 },
+    { id = "drum1", cat = "fun", name = "Тауренский барабан", entry = 600142, price = 200000, kind = "music", dist = 2.5 },
+    { id = "drum2", cat = "fun", name = "Большой барабан", entry = 600143, price = 350000, kind = "music", dist = 2.5 },
+    { id = "drum3", cat = "fun", name = "Барабан вуду", entry = 600144, price = 150000, kind = "music", dist = 2.5 },
+    { id = "toytrain", cat = "fun", name = "Игрушечная железная дорога", entry = 600145, price = 300000, kind = "toy", dist = 2.5 },
+    { id = "doll1", cat = "fun", name = "Тряпичная кукла", entry = 600146, price = 50000, kind = "toy", dist = 2.5 },
+    { id = "doll2", cat = "fun", name = "Кукла", entry = 600147, price = 50000, kind = "toy", dist = 2.5 },
+    { id = "target1", cat = "fun", name = "Мишень", entry = 600148, price = 100000, kind = "target", dist = 2.5 },
+    { id = "target2", cat = "fun", name = "Мишень Штормграда", entry = 600149, price = 120000, kind = "target", dist = 2.5 },
+    { id = "target3", cat = "fun", name = "Мишень дворфов", entry = 600150, price = 120000, kind = "target", dist = 2.5 },
+    { id = "target4", cat = "fun", name = "Тир", entry = 600151, price = 200000, kind = "target", dist = 2.5 },
+    { id = "dummy", cat = "fun", name = "Тренировочный манекен", entry = 600152, price = 120000, kind = "target", dist = 2.5 },
+    { id = "fountain1", cat = "garden", name = "Эльфийский фонтан", entry = 600153, price = 800000, kind = "fountain", dist = 2.5 },
+    { id = "fountain2", cat = "garden", name = "Даларанский фонтан", entry = 600154, price = 1500000, kind = "fountain", dist = 2.5 },
+    { id = "moonwell", cat = "garden", name = "Лунный колодец", entry = 600155, price = 2000000, kind = "fountain", dist = 2.5 },
+    { id = "lightwell", cat = "garden", name = "Источник Света", entry = 600156, price = 1200000, kind = "fountain", dist = 2.5 },
+    { id = "mailbox1", cat = "garden", name = "Почтовый ящик (рабочий)", entry = 600157, price = 500000, kind = nil, dist = 2.5 },
+    { id = "mailbox2", cat = "garden", name = "Почтовый ящик орков (рабочий)", entry = 600158, price = 500000, kind = nil, dist = 2.5 },
+    { id = "campfire", cat = "garden", name = "Костёр (для готовки)", entry = 600159, price = 50000, kind = nil, dist = 2.5 },
+    { id = "anvil", cat = "garden", name = "Наковальня (рабочая)", entry = 600160, price = 250000, kind = nil, dist = 2.5 },
+    { id = "forge", cat = "garden", name = "Горн (рабочий)", entry = 600161, price = 250000, kind = nil, dist = 2.5 },
+    { id = "bonfire", cat = "garden", name = "Большой костёр", entry = 600162, price = 100000, kind = nil, dist = 2.5 },
+    { id = "garden1", cat = "garden", name = "Растение", entry = 600163, price = 20000, kind = nil, dist = 2.5 },
+    { id = "garden2", cat = "garden", name = "Растение (2)", entry = 600164, price = 20000, kind = nil, dist = 2.5 },
+    { id = "garden3", cat = "garden", name = "Растение (3)", entry = 600165, price = 20000, kind = nil, dist = 2.5 },
+    { id = "garden4", cat = "garden", name = "Растение (4)", entry = 600166, price = 20000, kind = nil, dist = 2.5 },
+    { id = "garden5", cat = "garden", name = "Растение (5)", entry = 600167, price = 20000, kind = nil, dist = 2.5 },
+    { id = "garden6", cat = "garden", name = "Цветок в горшке", entry = 600168, price = 30000, kind = nil, dist = 2.5 },
+    { id = "garden7", cat = "garden", name = "Букет", entry = 600169, price = 20000, kind = nil, dist = 2.5 },
+    { id = "garden8", cat = "garden", name = "Букет (2)", entry = 600170, price = 20000, kind = nil, dist = 2.5 },
+    { id = "garden9", cat = "garden", name = "Букет (3)", entry = 600171, price = 20000, kind = nil, dist = 2.5 },
+    { id = "garden10", cat = "garden", name = "Цветы Элвиннского леса", entry = 600172, price = 20000, kind = nil, dist = 2.5 },
+    { id = "garden11", cat = "garden", name = "Клумба син'дорай", entry = 600173, price = 60000, kind = nil, dist = 2.5 },
+    { id = "garden12", cat = "garden", name = "Ваза с цветами", entry = 600174, price = 40000, kind = nil, dist = 2.5 },
+    { id = "garden13", cat = "garden", name = "Венок", entry = 600175, price = 30000, kind = nil, dist = 2.5 },
+    { id = "garden14", cat = "garden", name = "Ёлка", entry = 600176, price = 200000, kind = nil, dist = 2.5 },
+    { id = "garden15", cat = "garden", name = "Большая ёлка", entry = 600177, price = 350000, kind = nil, dist = 2.5 },
+    { id = "garden16", cat = "garden", name = "Саженец", entry = 600178, price = 30000, kind = nil, dist = 2.5 },
+    { id = "garden17", cat = "garden", name = "Дерево Западного Края", entry = 600179, price = 250000, kind = nil, dist = 2.5 },
+    { id = "garden18", cat = "garden", name = "Деревце Террокара", entry = 600180, price = 150000, kind = nil, dist = 2.5 },
+    { id = "garden19", cat = "garden", name = "Куст", entry = 600181, price = 20000, kind = nil, dist = 2.5 },
+    { id = "garden20", cat = "garden", name = "Куст (2)", entry = 600182, price = 20000, kind = nil, dist = 2.5 },
+    { id = "garden21", cat = "garden", name = "Куст (3)", entry = 600183, price = 20000, kind = nil, dist = 2.5 },
+    { id = "garden22", cat = "garden", name = "Стог сена", entry = 600184, price = 40000, kind = nil, dist = 2.5 },
+    { id = "garden23", cat = "garden", name = "Стог сена (2)", entry = 600185, price = 40000, kind = nil, dist = 2.5 },
+    { id = "garden24", cat = "garden", name = "Тюк сена", entry = 600186, price = 30000, kind = nil, dist = 2.5 },
+    { id = "garden25", cat = "garden", name = "Тюк сена (2)", entry = 600187, price = 30000, kind = nil, dist = 2.5 },
+    { id = "garden26", cat = "garden", name = "Тыква", entry = 600188, price = 10000, kind = nil, dist = 2.5 },
+    { id = "garden27", cat = "garden", name = "Тыквенная грядка", entry = 600189, price = 50000, kind = nil, dist = 2.5 },
+    { id = "garden28", cat = "garden", name = "Пугало", entry = 600190, price = 80000, kind = nil, dist = 2.5 },
+    { id = "garden29", cat = "garden", name = "Пугало Темнолесья", entry = 600191, price = 80000, kind = nil, dist = 2.5 },
+    { id = "garden30", cat = "garden", name = "Статуя льва", entry = 600192, price = 600000, kind = nil, dist = 2.5 },
+    { id = "garden31", cat = "garden", name = "Статуя Утера", entry = 600193, price = 2000000, kind = nil, dist = 2.5 },
+    { id = "garden32", cat = "garden", name = "Статуя паладина", entry = 600194, price = 1200000, kind = nil, dist = 2.5 },
+    { id = "garden33", cat = "garden", name = "Статуя жреца", entry = 600195, price = 1200000, kind = nil, dist = 2.5 },
+    { id = "garden34", cat = "garden", name = "Статуя орла", entry = 600196, price = 600000, kind = nil, dist = 2.5 },
+    { id = "garden35", cat = "garden", name = "Статуя син'дорай", entry = 600197, price = 1000000, kind = nil, dist = 2.5 },
+    { id = "garden36", cat = "garden", name = "Каменный медведь", entry = 600198, price = 600000, kind = nil, dist = 2.5 },
+    { id = "garden37", cat = "garden", name = "Каменный олень", entry = 600199, price = 600000, kind = nil, dist = 2.5 },
+    { id = "garden38", cat = "garden", name = "Каменная сова", entry = 600200, price = 600000, kind = nil, dist = 2.5 },
+    { id = "garden39", cat = "garden", name = "Телега Западного Края", entry = 600201, price = 150000, kind = nil, dist = 2.5 },
+    { id = "garden40", cat = "garden", name = "Повозка", entry = 600202, price = 150000, kind = nil, dist = 2.5 },
+    { id = "garden41", cat = "garden", name = "Телега с сеном", entry = 600203, price = 150000, kind = nil, dist = 2.5 },
+    { id = "garden42", cat = "garden", name = "Цыганская кибитка", entry = 600204, price = 600000, kind = nil, dist = 2.5 },
+    { id = "garden43", cat = "garden", name = "Вывеска трактира", entry = 600205, price = 100000, kind = nil, dist = 2.5 },
+    { id = "garden44", cat = "garden", name = "Коновязь", entry = 600206, price = 50000, kind = nil, dist = 2.5 },
+    { id = "build1", cat = "build", name = "Деревянный забор", entry = 600207, price = 40000, kind = nil, dist = 5 },
+    { id = "build2", cat = "build", name = "Простой забор", entry = 600208, price = 30000, kind = nil, dist = 5 },
+    { id = "build3", cat = "build", name = "Кованый забор", entry = 600209, price = 40000, kind = nil, dist = 5 },
+    { id = "build4", cat = "build", name = "Столб забора", entry = 600210, price = 10000, kind = nil, dist = 5 },
+    { id = "build5", cat = "build", name = "Северный столб забора", entry = 600211, price = 10000, kind = nil, dist = 5 },
+    { id = "build6", cat = "build", name = "Орочий забор", entry = 600212, price = 40000, kind = nil, dist = 5 },
+    { id = "build7", cat = "build", name = "Столб орочьего забора", entry = 600213, price = 10000, kind = nil, dist = 5 },
+    { id = "build8", cat = "build", name = "Столб ограды син'дорай", entry = 600214, price = 20000, kind = nil, dist = 5 },
+    { id = "build9", cat = "build", name = "Стена дома", entry = 600215, price = 250000, kind = nil, dist = 5 },
+    { id = "build10", cat = "build", name = "Стена дома (2)", entry = 600216, price = 250000, kind = nil, dist = 5 },
+    { id = "build11", cat = "build", name = "Каменная стена (руины)", entry = 600217, price = 150000, kind = nil, dist = 5 },
+    { id = "build12", cat = "build", name = "Каменная стена (руины 2)", entry = 600218, price = 150000, kind = nil, dist = 5 },
+    { id = "build13", cat = "build", name = "Каменная стена", entry = 600219, price = 600000, kind = nil, dist = 5 },
+    { id = "build14", cat = "build", name = "Угловая башенка", entry = 600220, price = 600000, kind = nil, dist = 5 },
+    { id = "build15", cat = "build", name = "Крепостная стена", entry = 600221, price = 3000000, kind = nil, dist = 5 },
+    { id = "build16", cat = "build", name = "Крепостная башня", entry = 600222, price = 3000000, kind = nil, dist = 5 },
+    { id = "build17", cat = "build", name = "Ворота крепости", entry = 600223, price = 3000000, kind = nil, dist = 5 },
+    { id = "build18", cat = "build", name = "Дверь фермы", entry = 600224, price = 100000, kind = nil, dist = 5 },
+    { id = "build19", cat = "build", name = "Деревянный помост", entry = 600225, price = 150000, kind = nil, dist = 5 },
+    { id = "build20", cat = "build", name = "Мостки", entry = 600226, price = 150000, kind = nil, dist = 5 },
+    { id = "build21", cat = "build", name = "Пристань", entry = 600227, price = 200000, kind = nil, dist = 5 },
+    { id = "build22", cat = "build", name = "Пристань (2)", entry = 600228, price = 200000, kind = nil, dist = 5 },
+    { id = "build23", cat = "build", name = "Малый причал", entry = 600229, price = 400000, kind = nil, dist = 5 },
+    { id = "build24", cat = "build", name = "Платформа", entry = 600230, price = 400000, kind = nil, dist = 5 },
+    { id = "build25", cat = "build", name = "Деревянная лестница", entry = 600231, price = 100000, kind = nil, dist = 5 },
+    { id = "build26", cat = "build", name = "Каменная лестница", entry = 600232, price = 150000, kind = nil, dist = 5 },
+    { id = "build27", cat = "build", name = "Каменная лестница (2)", entry = 600233, price = 150000, kind = nil, dist = 5 },
+    { id = "build28", cat = "build", name = "Палатка", entry = 600234, price = 200000, kind = nil, dist = 5 },
+    { id = "build29", cat = "build", name = "Большая палатка", entry = 600235, price = 300000, kind = nil, dist = 5 },
+    { id = "build30", cat = "build", name = "Северная палатка", entry = 600236, price = 200000, kind = nil, dist = 5 },
+    { id = "build31", cat = "build", name = "Палатка (2)", entry = 600237, price = 200000, kind = nil, dist = 5 },
+    { id = "build32", cat = "build", name = "Орочий шатёр", entry = 600238, price = 250000, kind = nil, dist = 5 },
+    { id = "build33", cat = "build", name = "Шатёр Дуротара", entry = 600239, price = 250000, kind = nil, dist = 5 },
+    { id = "build34", cat = "build", name = "Эльфийский шатёр", entry = 600240, price = 250000, kind = nil, dist = 5 },
+    { id = "build35", cat = "build", name = "Павильон", entry = 600241, price = 300000, kind = nil, dist = 5 },
+    { id = "build36", cat = "build", name = "Пивной шатёр", entry = 600242, price = 400000, kind = nil, dist = 5 },
+    { id = "build37", cat = "build", name = "Гоблинский шатёр", entry = 600243, price = 250000, kind = nil, dist = 5 },
+    { id = "build38", cat = "build", name = "Гоблинский шатёр (2)", entry = 600244, price = 250000, kind = nil, dist = 5 },
+    { id = "build39", cat = "build", name = "Шатёр ночных эльфов", entry = 600245, price = 400000, kind = nil, dist = 5 },
+    { id = "build40", cat = "build", name = "Шатёр ночных эльфов (2)", entry = 600246, price = 400000, kind = nil, dist = 5 },
+    { id = "build41", cat = "build", name = "Колонна", entry = 600247, price = 200000, kind = nil, dist = 5 },
+    { id = "build42", cat = "build", name = "Основание колонны", entry = 600248, price = 100000, kind = nil, dist = 5 },
+    { id = "build43", cat = "build", name = "Кирпичный мостик", entry = 600249, price = 300000, kind = nil, dist = 5 },
+    { id = "house1", cat = "house", name = "Фермерский дом (Западный Край)", entry = 600250, price = 6000000, kind = "house", dist = 18, r = 13 },
+    { id = "house2", cat = "house", name = "Фермерский дом (Красногорье)", entry = 600251, price = 6000000, kind = "house", dist = 18, r = 13 },
+    { id = "house3", cat = "house", name = "Фермерский дом (Темнолесье)", entry = 600252, price = 6000000, kind = "house", dist = 18, r = 13 },
+    { id = "house4", cat = "house", name = "Двухэтажный дом (Темнолесье)", entry = 600253, price = 9000000, kind = "house", dist = 18, r = 14 },
+    { id = "house5", cat = "house", name = "Северный дом", entry = 600254, price = 8000000, kind = "house", dist = 18, r = 15 },
+    { id = "house6", cat = "house", name = "Ферма Стратхольма", entry = 600255, price = 5000000, kind = "house", dist = 18, r = 12 },
+    { id = "house7", cat = "house", name = "Дом игрока (прототип Blizzard)", entry = 600256, price = 7000000, kind = "house", dist = 18, r = 14 },
+    { id = "house8", cat = "house", name = "Дренейская хижина", entry = 600257, price = 4000000, kind = "house", dist = 18, r = 10 },
+    { id = "house9", cat = "house", name = "Хижина таунка", entry = 600258, price = 3500000, kind = "house", dist = 18, r = 10 },
+    { id = "house10", cat = "house", name = "Большой шатёр друидов", entry = 600259, price = 9000000, kind = "house", dist = 18, r = 25 },
+    { id = "house11", cat = "house", name = "Амбар (Красногорье)", entry = 600260, price = 4500000, kind = "house", dist = 18, r = 16 },
+    { id = "house12", cat = "house", name = "Амбар (Темнолесье)", entry = 600261, price = 4500000, kind = "house", dist = 18, r = 16 },
+    { id = "house13", cat = "house", name = "Конюшня (Красногорье)", entry = 600262, price = 3500000, kind = "house", dist = 18, r = 14 },
+    { id = "house14", cat = "house", name = "Конюшня (Темнолесье)", entry = 600263, price = 3500000, kind = "house", dist = 18, r = 14 },
+    { id = "house15", cat = "house", name = "Лесопилка", entry = 600264, price = 5000000, kind = "house", dist = 18, r = 16 },
+    { id = "house16", cat = "house", name = "Кузница", entry = 600265, price = 5000000, kind = "house", dist = 18, r = 12 },
+    { id = "house17", cat = "house", name = "Часовня (Красногорье)", entry = 600266, price = 8000000, kind = "house", dist = 18, r = 14 },
+    { id = "house18", cat = "house", name = "Часовня (Темнолесье)", entry = 600267, price = 8000000, kind = "house", dist = 18, r = 14 },
+    { id = "house19", cat = "house", name = "Часовня", entry = 600268, price = 8000000, kind = "house", dist = 18, r = 14 },
+    { id = "house20", cat = "house", name = "Гнездовье грифонов", entry = 600269, price = 7000000, kind = "house", dist = 18, r = 16 },
+    { id = "house21", cat = "house", name = "Сторожевая башня", entry = 600270, price = 10000000, kind = "house", dist = 18, r = 14 },
+    { id = "house22", cat = "house", name = "Башня друида", entry = 600271, price = 12000000, kind = "house", dist = 18, r = 14 },
+    { id = "house23", cat = "house", name = "Орочьи казармы", entry = 600272, price = 9000000, kind = "house", dist = 18, r = 20 },
+    { id = "house24", cat = "house", name = "Старый орочий зал", entry = 600273, price = 9000000, kind = "house", dist = 18, r = 20 },
+    { id = "house25", cat = "house", name = "Орочья псарня", entry = 600274, price = 4000000, kind = "house", dist = 18, r = 12 },
+    { id = "house26", cat = "house", name = "Орочья кузница", entry = 600275, price = 5000000, kind = "house", dist = 18, r = 12 },
+    { id = "house27", cat = "house", name = "Разрушенный дом", entry = 600276, price = 1000000, kind = "house", dist = 18, r = 12 },
+    { id = "house28", cat = "house", name = "Сгоревшая ферма", entry = 600277, price = 1500000, kind = "house", dist = 18, r = 13 },
+    { id = "house29", cat = "house", name = "Сгоревшая ферма (Темнолесье)", entry = 600278, price = 1500000, kind = "house", dist = 18, r = 13 },
+    { id = "barber", cat = "bath", name = "Кресло парикмахера", entry = 600279, price = 400000, kind = nil, dist = 2.5 },
+    { id = "fridge", cat = "kitchen", name = "Кладовая с припасами", entry = 600280, price = 300000, kind = "fridge", dist = 2.5 },
+    { id = "computer", cat = "living", name = "Гномий терминал (компьютер)", entry = 600281, price = 1500000, kind = "computer", dist = 2.5 },
+    { id = "tv", cat = "living", name = "Хрустальный шар (телевизор)", entry = 600282, price = 1200000, kind = "tv", dist = 2.5 },
+    { id = "easel", cat = "fun", name = "Холст для рисования", entry = 600283, price = 400000, kind = "easel", dist = 2.5 },
+    { id = "chess", cat = "fun", name = "Стол для шахмат", entry = 600284, price = 350000, kind = "chess", dist = 2.5 },
+    { id = "dummy2", cat = "fun", name = "Тренировочное чучело (Штормград)", entry = 600285, price = 250000, kind = "fitness", dist = 2.5 },
+    { id = "keg", cat = "living", name = "Пивная бочка (бар)", entry = 600286, price = 400000, kind = "bar", dist = 2.5 },
+    { id = "globe", cat = "living", name = "Глобус", entry = 600287, price = 300000, kind = "globe", dist = 2.5 },
+    { id = "cake", cat = "kitchen", name = "Праздничный торт", entry = 600288, price = 100000, kind = "cake", dist = 2.5 },
+    { id = "clock", cat = "living", name = "Часы с кукушкой", entry = 600289, price = 150000, kind = "clock", dist = 2.5 },
+    { id = "herb1", cat = "garden", name = "Грядка мироцвета", entry = 600290, price = 200000, kind = "plant", dist = 2.5 },
+    { id = "herb2", cat = "garden", name = "Грядка сребролиста", entry = 600291, price = 300000, kind = "plant", dist = 2.5 },
+    { id = "herb3", cat = "garden", name = "Грядка магороза", entry = 600292, price = 400000, kind = "plant", dist = 2.5 },
+    { id = "herb4", cat = "garden", name = "Грядка быстрорастки", entry = 600293, price = 500000, kind = "plant", dist = 2.5 },
+    { id = "herb5", cat = "garden", name = "Грядка синячника", entry = 600294, price = 600000, kind = "plant", dist = 2.5 },
+    { id = "herb6", cat = "garden", name = "Грядка золотого клевера", entry = 600295, price = 700000, kind = "plant", dist = 2.5 },
+}
+local KID_ENTRY = {}
+
+local ITEM_BY_ID, ITEM_BY_ENTRY = {}, {}
+for i, it in ipairs(CATALOG) do it.idx = i; ITEM_BY_ID[it.id] = it; ITEM_BY_ENTRY[it.entry] = it end
+local KID_ENTRIES = {}
+for g = 1, 5 do for sex = 0, 1 do KID_ENTRY[g * 2 + sex - 2] = 190110 + (g - 1) * 2 + sex end end
+for i = 0, 9 do KID_ENTRIES[190110 + i] = true end
+local SPOUSE_ENTRY = { [0] = 190120, [1] = 190121 }
+local SPOUSE_ENTRIES = { [190120] = true, [190121] = true }
+
+------------------------------------------------------------------------
+-- СПРАВОЧНИКИ
+------------------------------------------------------------------------
+local NEEDS = { "hunger", "energy", "hygiene", "fun", "social", "bladder" }
+TX.NEED_NAME = { hunger = "Голод", energy = "Энергия", hygiene = "Гигиена", fun = "Веселье", social = "Общение", bladder = "Туалет" }
+TX.NEED_WARN = {
+    hunger  = { "Вы проголодались. Пора бы перекусить.",          "Вы умираете с голоду! Здоровье начинает убывать." },
+    energy  = { "Вы устали. Присядьте или поспите (/sleep).",       "Вы валитесь с ног! Скорость снижена." },
+    hygiene = { "От вас начинает попахивать. Искупайтесь.",         "Вы ужасно воняете. Окружающие морщат нос." },
+    fun     = { "Вам скучно. Потанцуйте, почитайте или подеритесь.", "Вам смертельно скучно!" },
+    social  = { "Вам одиноко. Пообщайтесь с кем-нибудь.",           "Вы чувствуете себя совсем одиноким." },
+    bladder = { "Вам нужно в уборную.",                              "Срочно найдите уборную!" },
+}
+local MOODS = {
+    { name = "Вдохновлён", color = "ff40ff40", xp = 1.15 },
+    { name = "Счастлив",   color = "ff9cff4f", xp = 1.05 },
+    { name = "Спокоен",    color = "ffffffff", xp = 1.00 },
+    { name = "Не в духе",  color = "ffffb040", xp = 0.90 },
+    { name = "Несчастен",  color = "ffff4040", xp = 0.75 },
+}
+local TRAITS = {
+    { key = "glutton",   name = "Обжора",         desc = "голод растёт в 1.5 раза быстрее, еда насыщает в 1.5 раза сильнее" },
+    { key = "energetic", name = "Энергичный",     desc = "энергия тратится на 30% медленнее" },
+    { key = "slob",      name = "Неряха",         desc = "гигиена падает медленнее и не портит настроение" },
+    { key = "party",     name = "Душа компании",  desc = "общение нужно чаще, но и восполняется в 1.5 раза быстрее" },
+    { key = "loner",     name = "Одиночка",       desc = "почти не нуждается в общении, но и получает от него меньше" },
+    { key = "active",    name = "Активный",       desc = "бой веселит вдвое, но без боя скучно быстрее" },
+    { key = "neat",      name = "Чистюля",        desc = "гигиена падает быстрее; грязь сильно портит настроение" },
+    { key = "romantic",  name = "Романтик",       desc = "романтика развивается вдвое быстрее" },
+    { key = "workaholic",name = "Трудоголик",     desc = "+25% к зарплате, работа почти не утомляет" },
+    { key = "lazy",      name = "Лентяй",         desc = "отдыхает в 1.5 раза быстрее, но работает хуже" },
+    { key = "bookworm",  name = "Книжный червь",  desc = "чтение веселит вдвое сильнее" },
+    { key = "family",    name = "Семьянин",       desc = "дети и партнёр радуют вдвое сильнее" },
+}
+local TRAIT_BY_KEY = {}
+for i, t in ipairs(TRAITS) do t.id = i; TRAIT_BY_KEY[t.key] = t end
+
+local CAREERS = {
+    { name = "Кулинария", ranks = { "Поварёнок", "Помощник повара", "Повар", "Шеф-повар", "Легенда кухни Азерота" } },
+    { name = "Стража",    ranks = { "Новобранец", "Стражник", "Сержант", "Капитан стражи", "Командор" } },
+    { name = "Магия",     ranks = { "Ученик", "Подмастерье", "Чародей", "Магистр", "Архимаг" } },
+    { name = "Торговля",  ranks = { "Подсобник", "Лоточник", "Торговец", "Купец", "Торговый барон" } },
+    { name = "Искусство", ranks = { "Уличный музыкант", "Менестрель", "Бард", "Маэстро", "Звезда таверн" } },
+    { name = "Медицина",  ranks = { "Санитар", "Медбрат", "Лекарь", "Целитель", "Главный целитель" } },
+    { name = "Спорт",     ranks = { "Новичок", "Атлет", "Чемпион города", "Звезда арены", "Легенда Азерота" } },
+}
+TX.CAREER_PAY = { 30, 50, 80, 120, 180 }
+
+TX.DISHES = { "рагу из кабаньих рёбрышек", "пирог с черникой", "жареную рыбу", "суп из кодо",
+    "лепёшки с мёдом", "шашлычок из волчатины", "омлет из яиц дракондора", "печёный картофель по-дворфийски" }
+TX.BOOKS = { "«Тайны Лордерона, том II»", "«Как приручить гиппогрифа»", "«Кулинария для гоблинов»",
+    "«Дневник рассеянного гнома»", "«Любовь в Даларане»", "«Сто способов не умереть в Нордсколе»",
+    "«Сказки бабушки-таурена»", "«Тролли: правда и вымысел»" }
+
+TX.LINES = {
+    friend  = { "Рад тебя видеть, $N!", "О, это снова ты! Как дела?", "Ты всегда поднимаешь мне настроение.", "Привет, дружище!" },
+    neutral = { "Э-э... здравствуйте.", "Мы знакомы?", "Хм. Ну, привет.", "Добрый день." },
+    hostile = { "Отстань от меня!", "Опять ты?!", "Иди своей дорогой.", "Ещё раз — и позову стражу." },
+    laugh   = { "Ха-ха-ха! Ну ты даёшь!", "Ой, не могу! Ха-ха!", "Смешно, смешно.", "Хе-хе, хорошая шутка." },
+    flop    = { "...Это была шутка?", "Не смешно.", "Эм. Ладно." },
+    gift    = { "Это мне? Спасибо огромное!", "Какой чудесный подарок!", "Ты так добр ко мне!" },
+    offended= { "Как грубо!", "Да как ты смеешь?!", "Хамло!", "Я это запомню." },
+    romance = { "Ох... ты меня смущаешь.", "*краснеет*", "Может, поужинаем вместе?", "Ты такой милый сегодня." },
+    awkward = { "Эм... это было неловко.", "Мы не настолько близки!", "Держи дистанцию, пожалуйста." },
+    accept  = { "Да! Конечно да!", "Я так долго этого ждал(а)!", "С радостью!" },
+    reject  = { "Прости... я не готов(а).", "Нет. Давай останемся друзьями.", "Мне нужно подумать... Нет." },
+    sad     = { "Как ты мог(ла)?..", "Ну и уходи!", "*плачет*" },
+}
+TX.KID_STAGES = { "Младенец", "Малыш", "Ребёнок", "Подросток", "Взрослый" }
+TX.KID_SCALE = { 0.5, 0.65, 0.85, 1.05, 1.0 }
+-- взрослые дети: модели горожан своей расы (группа -> { сын, дочь })
+-- { сын, дочь }: 19178 — человек-мужчина, 19177 — человек-женщина и т.д. (проверено по creature_template_model)
+TX.ADULT_DISPLAY = { [1] = { 19178, 19177 }, [2] = { 19182, 19181 }, [3] = { 19170, 19169 }, [4] = { 19172, 19171 }, [5] = { 19184, 19183 } }
+TX.KID_LINES = {
+    { "*агукает*", "*улыбается*", "Уа-а-а!", "*сопит*" },
+    { "Хочу на ручки!", "Смотри, жучок!", "Мама! Папа!", "А это что?" },
+    { "А можно мне грифона?", "Я буду великим магом!", "Мы скоро придём?", "Смотри, как я умею!" },
+    { "Ну ма-а-ам...", "Можно я пойду в рейд с друзьями?", "Это так скучно.", "Я уже взрослый(ая)!" },
+    { "Как дела у вас, родители?", "Я сегодня так устал(а) на работе.", "Может, мне пора съехать?", "Спасибо, что вырастили меня." },
+}
+TX.NAMES = {
+    [0] = { "Артём", "Тимофей", "Лев", "Мирон", "Ярослав", "Гарет", "Остин", "Дорин", "Таль", "Брам" },
+    [1] = { "Алиса", "Ева", "Мила", "Вера", "Лира", "Элия", "Сьюзи", "Ника", "Тесса", "Ива" },
+}
+TX.RACE_GROUP = { [1] = 1, [3] = 1, [4] = 1, [7] = 1, [5] = 1, [2] = 2, [8] = 2, [6] = 5, [10] = 3, [11] = 4 }
+-- 1.0: раса ребёнка — 50/50 от родителей. В grp хранится 100 + раса (старые дети: 1..5 — группы внешности)
+TX.GRP_RACE = { [1] = 1, [2] = 2, [3] = 10, [4] = 11, [5] = 6 }
+-- у этих рас есть модели детей (группа шаблона 190110..190119)
+TX.KID_MODEL_GRP = { [1] = 1, [2] = 2, [10] = 3, [11] = 4, [6] = 5 }
+-- взрослые горожане каждой расы { мужчина, женщина } (creature_template_model «[PH] Gossip NPC, …»)
+TX.ADULT_RACE = { [1] = { 19178, 19177 }, [2] = { 19182, 19181 }, [3] = { 19174, 19173 }, [4] = { 19180, 19179 },
+    [5] = { 19188, 19187 }, [6] = { 19184, 19183 }, [7] = { 19176, 19175 }, [8] = { 19186, 19185 }, [9] = { 19343, 19340 },
+    [10] = { 19170, 19169 }, [11] = { 19172, 19171 } }
+-- дети рас без детских моделей — уменьшенная модель горожанина своей расы
+TX.MINI_SCALE = { 0.42, 0.52, 0.64, 0.82 }
+TX.KID_NATIVE = { [190110] = 221, [190111] = 252, [190112] = 14589, [190113] = 14616, [190114] = 19314, [190115] = 19315,
+    [190116] = 19092, [190117] = 19091, [190118] = 23783, [190119] = 23783 }
+TX.MINI_RACE_MULT = { [3] = 1.15, [7] = 1.45 }
+TX.MODEL_RACE = { human = 1, orc = 2, dwarf = 3, nightelf = 4, scourge = 5, tauren = 6, gnome = 7, troll = 8, goblin = 9, bloodelf = 10, draenei = 11 }
+
+------------------------------------------------------------------------
+-- ВСПОМОГАТЕЛЬНОЕ
+------------------------------------------------------------------------
+local S = {}
+local botCache = {}
+local KIDS_BY_LOW = {}  -- guidLow созданного ребёнка -> { owner = guidLow, cid = id }
+local PENDING = {}      -- guidLow получателя -> запрос
+local TAG = "|cff4fc3f7[SimsCraft]|r "
+------------------------------------------------------------------------
+-- 1.0: ЯЗЫК (русский / английский) — по языку клиента игрока
+-- Тексты в коде русские; перед отправкой игроку с нерусским клиентом фразы заменяются по словарю TX.EN
+------------------------------------------------------------------------
+TX.EN_SRC = [==[
+Спальня	Bedroom
+Кухня	Kitchen
+Ванная	Bathroom
+Гостиная	Living room
+Свет	Lighting
+Досуг	Leisure
+Сад и двор	Garden & yard
+Стройка	Building
+Готовые дома	Ready-made houses
+Кровать с балдахином	Canopy bed
+Кровать (Темнолесье)	Bed (Duskwood)
+Кровать (Западный Край)	Bed (Westfall)
+Двухъярусная кровать	Bunk bed
+Каменное ложе	Stone bed
+Ложе друида	Druid's bed
+Резной шкаф	Carved wardrobe
+Дворфийский шкаф	Dwarven wardrobe
+Гардероб	Wardrobe
+Тумбочка с зеркалом	Vanity with mirror
+Сундук	Chest
+Кованый сундук	Iron-bound chest
+Сундук Альянса	Alliance chest
+Сундук Орды	Horde chest
+Подушка	Cushion
+Ковёр Штормграда	Stormwind rug
+Ковёр Штормграда (2)	Stormwind rug (2)
+Ковёр тауренов	Tauren rug
+Узорный ковёр тауренов	Patterned tauren rug
+Ковёр тауренов (3)	Tauren rug (3)
+Ковёр тауренов (4)	Tauren rug (4)
+Длинный ковёр	Long rug
+Меховой ковёр	Fur rug
+Даларанский ковёр	Dalaran rug
+Ковёр син'дорай	Sin'dorei rug
+Большой ковёр син'дорай	Large sin'dorei rug
+Медвежья шкура	Bearskin
+Пузатая печка	Potbelly stove
+Печка траппера	Trapper's stove
+Настенная печка	Wall stove
+Орочий очаг	Orcish hearth
+Очаг с огнём	Hearth with fire
+Трактирный стол	Tavern table
+Маленький столик	Small table
+Трактирный столик	Tavern side table
+Резной дворфийский стол	Carved dwarven table
+Дворфийский стол	Dwarven table
+Маленький дворфийский стол	Small dwarven table
+Стол орков	Orc table
+Эльфийский стол	Elven table
+Круглый стол	Round table
+Стол Западного Края	Westfall table
+Большой стол син'дорай	Large sin'dorei table
+Столик син'дорай	Sin'dorei side table
+Столик из Каражана	Karazhan side table
+Большой стол из Каражана	Large Karazhan table
+Стол Темнолесья	Duskwood table
+Трактирная бочка	Tavern barrel
+Бочка	Barrel
+Дворфийская бочка	Dwarven barrel
+Бочка с фруктами	Fruit barrel
+Пивной бочонок	Beer keg
+Пивная стойка	Beer rack
+Пивные бочки	Beer barrels
+Ящик	Crate
+Ящик с зерном	Grain crate
+Бочка-купель	Barrel bath
+Таз для умывания	Wash basin
+Уборная	Outhouse
+Даларанский колодец	Dalaran well
+Простой стул	Simple chair
+Стул	Chair
+Резное кресло	Carved armchair
+Стул Западного Края	Westfall chair
+Дворфийское кресло	Dwarven armchair
+Стул Стальгорна	Ironforge chair
+Резной стул Стальгорна	Carved Ironforge chair
+Простой стул Стальгорна	Simple Ironforge chair
+Стул син'дорай	Sin'dorei chair
+Кресло син'дорай	Sin'dorei armchair
+Даларанское кресло	Dalaran armchair
+Даларанский стул	Dalaran chair
+Стул гномов	Gnomish chair
+Бревно-сиденье	Log seat
+Стул врайкулов	Vrykul chair
+Кресло цирюльника	Barber chair
+Трон Чёрного Железа	Dark Iron throne
+Трон Каражана	Karazhan throne
+Трон вождя	Chieftain's throne
+Трактирная скамья	Tavern bench
+Скамья Штормграда	Stormwind bench
+Скамья Темнолесья	Duskwood bench
+Скамья орков	Orc bench
+Скамья син'дорай	Sin'dorei bench
+Даларанская скамья	Dalaran bench
+Даларанская скамья (2)	Dalaran bench (2)
+Гномья скамья со столиком	Gnomish bench with table
+Книжная полка	Bookshelf
+Книжная полка (2)	Bookshelf (2)
+Книжная полка (3)	Bookshelf (3)
+Полка из аббатства	Abbey shelf
+Книжная полка Каражана	Karazhan bookshelf
+Стол для чтения	Reading desk
+Стопка книг	Stack of books
+Стопка книг (низкая)	Stack of books (low)
+Раскрытая книга	Open book
+Часы с кукушкой	Cuckoo clock
+Глобус	Globe
+Картина	Painting
+Картина (2)	Painting (2)
+Картина (3)	Painting (3)
+Портрет героя-дворфа	Portrait of a dwarf hero
+Портрет героя-гнома	Portrait of a gnome hero
+Портрет героя-человека	Portrait of a human hero
+Портрет героини-эльфийки	Portrait of an elf heroine
+Портрет героя-орка	Portrait of an orc hero
+Портрет Отрёкшегося	Portrait of a Forsaken
+Портрет таурена	Portrait of a tauren
+Портрет тролля	Portrait of a troll
+Знамя с грифоном	Gryphon banner
+Знамя Отрёкшихся	Forsaken banner
+Знамя ночных эльфов	Night elf banner
+Щит на стену	Wall shield
+Меч на стену	Wall sword
+Бюст	Bust
+Бюст (2)	Bust (2)
+Фонарный столб	Lamppost
+Даларанский фонарь	Dalaran lantern
+Фонарь Степей	Barrens lantern
+Тауренский фонарь	Tauren lantern
+Фонарь Дарнаса	Darnassus lantern
+Дренейский фонарь	Draenei lantern
+Фонарь	Lantern
+Эльфийский фонарь	Elven lantern
+Эльфийский фонарь (2)	Elven lantern (2)
+Красный фонарь син'дорай	Red sin'dorei lantern
+Праздничный фонарь Альянса	Alliance festive lantern
+Праздничный фонарь Орды	Horde festive lantern
+Настенная лампа Даларана	Dalaran wall lamp
+Свеча	Candle
+Свеча (2)	Candle (2)
+Свечи	Candles
+Романтическая свеча	Romantic candle
+Группа свечей	Candle cluster
+Настенный канделябр	Wall sconce
+Жаровня Штормграда	Stormwind brazier
+Дворфийская жаровня	Dwarven brazier
+Жаровня	Brazier
+Высокая жаровня	Tall brazier
+Факел	Torch
+Факел (2)	Torch (2)
+Северный факел	Northern torch
+Тауренский барабан	Tauren drum
+Большой барабан	Big drum
+Барабан вуду	Voodoo drum
+Игрушечная железная дорога	Toy train set
+Тряпичная кукла	Rag doll
+Кукла	Doll
+Мишень	Target
+Мишень Штормграда	Stormwind target
+Мишень дворфов	Dwarven target
+Тир	Shooting range
+Тренировочный манекен	Training dummy
+Эльфийский фонтан	Elven fountain
+Даларанский фонтан	Dalaran fountain
+Лунный колодец	Moonwell
+Источник Света	Wellspring of Light
+Почтовый ящик (рабочий)	Mailbox (working)
+Почтовый ящик орков (рабочий)	Orc mailbox (working)
+Костёр (для готовки)	Campfire (for cooking)
+Наковальня (рабочая)	Anvil (working)
+Горн (рабочий)	Forge (working)
+Большой костёр	Bonfire
+Растение	Plant
+Растение (2)	Plant (2)
+Растение (3)	Plant (3)
+Растение (4)	Plant (4)
+Растение (5)	Plant (5)
+Цветок в горшке	Potted flower
+Букет	Bouquet
+Букет (2)	Bouquet (2)
+Букет (3)	Bouquet (3)
+Цветы Элвиннского леса	Elwynn Forest flowers
+Клумба син'дорай	Sin'dorei flowerbed
+Ваза с цветами	Vase of flowers
+Венок	Wreath
+Ёлка	Christmas tree
+Большая ёлка	Big Christmas tree
+Саженец	Sapling
+Дерево Западного Края	Westfall tree
+Деревце Террокара	Terokkar sapling
+Куст	Bush
+Куст (2)	Bush (2)
+Куст (3)	Bush (3)
+Стог сена	Haystack
+Стог сена (2)	Haystack (2)
+Тюк сена	Hay bale
+Тюк сена (2)	Hay bale (2)
+Тыква	Pumpkin
+Тыквенная грядка	Pumpkin patch
+Пугало	Scarecrow
+Пугало Темнолесья	Duskwood scarecrow
+Статуя льва	Lion statue
+Статуя Утера	Statue of Uther
+Статуя паладина	Paladin statue
+Статуя жреца	Priest statue
+Статуя орла	Eagle statue
+Статуя син'дорай	Sin'dorei statue
+Каменный медведь	Stone bear
+Каменный олень	Stone stag
+Каменная сова	Stone owl
+Телега Западного Края	Westfall cart
+Повозка	Wagon
+Телега с сеном	Hay cart
+Цыганская кибитка	Gypsy caravan
+Вывеска трактира	Tavern sign
+Коновязь	Hitching post
+Деревянный забор	Wooden fence
+Простой забор	Simple fence
+Кованый забор	Wrought-iron fence
+Столб забора	Fence post
+Северный столб забора	Northern fence post
+Орочий забор	Orcish fence
+Столб орочьего забора	Orcish fence post
+Столб ограды син'дорай	Sin'dorei fence post
+Стена дома	House wall
+Стена дома (2)	House wall (2)
+Каменная стена (руины)	Stone wall (ruins)
+Каменная стена (руины 2)	Stone wall (ruins 2)
+Каменная стена	Stone wall
+Угловая башенка	Corner turret
+Крепостная стена	Fortress wall
+Крепостная башня	Fortress tower
+Ворота крепости	Fortress gate
+Дверь фермы	Farmhouse door
+Деревянный помост	Wooden platform
+Мостки	Boardwalk
+Пристань	Pier
+Пристань (2)	Pier (2)
+Малый причал	Small dock
+Платформа	Platform
+Деревянная лестница	Wooden stairs
+Каменная лестница	Stone stairs
+Каменная лестница (2)	Stone stairs (2)
+Палатка	Tent
+Большая палатка	Large tent
+Северная палатка	Northern tent
+Палатка (2)	Tent (2)
+Орочий шатёр	Orcish pavilion
+Шатёр Дуротара	Durotar pavilion
+Эльфийский шатёр	Elven pavilion
+Павильон	Pavilion
+Пивной шатёр	Beer tent
+Гоблинский шатёр	Goblin pavilion
+Гоблинский шатёр (2)	Goblin pavilion (2)
+Шатёр ночных эльфов	Night elf pavilion
+Шатёр ночных эльфов (2)	Night elf pavilion (2)
+Колонна	Column
+Основание колонны	Column base
+Кирпичный мостик	Brick bridge
+Фермерский дом (Западный Край)	Farmhouse (Westfall)
+Фермерский дом (Красногорье)	Farmhouse (Redridge)
+Фермерский дом (Темнолесье)	Farmhouse (Duskwood)
+Двухэтажный дом (Темнолесье)	Two-story house (Duskwood)
+Северный дом	Northern house
+Ферма Стратхольма	Stratholme farmhouse
+Дом игрока (прототип Blizzard)	Player house (Blizzard prototype)
+Дренейская хижина	Draenei hut
+Хижина таунка	Taunka hut
+Большой шатёр друидов	Large druid pavilion
+Амбар (Красногорье)	Barn (Redridge)
+Амбар (Темнолесье)	Barn (Duskwood)
+Конюшня (Красногорье)	Stable (Redridge)
+Конюшня (Темнолесье)	Stable (Duskwood)
+Лесопилка	Sawmill
+Кузница	Smithy
+Часовня (Красногорье)	Chapel (Redridge)
+Часовня (Темнолесье)	Chapel (Duskwood)
+Часовня	Chapel
+Гнездовье грифонов	Gryphon roost
+Сторожевая башня	Watchtower
+Башня друида	Druid tower
+Орочьи казармы	Orc barracks
+Старый орочий зал	Old orc hall
+Орочья псарня	Orc kennel
+Орочья кузница	Orc forge
+Разрушенный дом	Ruined house
+Сгоревшая ферма	Burned farmhouse
+Сгоревшая ферма (Темнолесье)	Burned farmhouse (Duskwood)
+Кресло парикмахера	Hairdresser's chair
+Кладовая с припасами	Pantry
+Гномий терминал (компьютер)	Gnomish terminal (computer)
+Хрустальный шар (телевизор)	Crystal ball (TV)
+Холст для рисования	Painting easel
+Стол для шахмат	Chess table
+Тренировочное чучело (Штормград)	Training dummy (Stormwind)
+Пивная бочка (бар)	Beer barrel (bar)
+Праздничный торт	Celebration cake
+Грядка мироцвета	Peacebloom patch
+Грядка сребролиста	Silverleaf patch
+Грядка магороза	Mageroyal patch
+Грядка быстрорастки	Swiftthistle patch
+Грядка синячника	Bruiseweed patch
+Грядка золотого клевера	Goldclover patch
+Голод	Hunger
+Энергия	Energy
+Гигиена	Hygiene
+Веселье	Fun
+Общение	Social
+Туалет	Bladder
+Вы проголодались. Пора бы перекусить.	You're getting hungry. Time for a snack.
+Вы умираете с голоду! Здоровье начинает убывать.	You're starving! Your health is dropping.
+Вы устали. Присядьте или поспите (/sleep).	You're tired. Sit down or sleep (/sleep).
+Вы валитесь с ног! Скорость снижена.	You're exhausted! Your speed is reduced.
+От вас начинает попахивать. Искупайтесь.	You're starting to smell. Take a bath.
+Вы ужасно воняете. Окружающие морщат нос.	You stink terribly. People are wrinkling their noses.
+Вам скучно. Потанцуйте, почитайте или подеритесь.	You're bored. Dance, read or have a fight.
+Вам смертельно скучно!	You're bored to death!
+Вам одиноко. Пообщайтесь с кем-нибудь.	You're lonely. Talk to someone.
+Вы чувствуете себя совсем одиноким.	You feel completely alone.
+Вам нужно в уборную.	You need the toilet.
+Срочно найдите уборную!	Find a toilet right now!
+Вдохновлён	Inspired
+Счастлив	Happy
+Спокоен	Fine
+Не в духе	Moody
+Несчастен	Miserable
+Обжора	Glutton
+голод растёт в 1.5 раза быстрее, еда насыщает в 1.5 раза сильнее	hunger grows 1.5x faster, food fills 1.5x more
+Энергичный	Energetic
+энергия тратится на 30% медленнее	energy drains 30% slower
+Неряха	Slob
+гигиена падает медленнее и не портит настроение	hygiene drops slower and doesn't spoil the mood
+Душа компании	Life of the party
+общение нужно чаще, но и восполняется в 1.5 раза быстрее	needs company more often, but refills it 1.5x faster
+Одиночка	Loner
+почти не нуждается в общении, но и получает от него меньше	barely needs company, but gets less from it
+Активный	Active
+бой веселит вдвое, но без боя скучно быстрее	fighting is twice as fun, but gets bored faster without it
+Чистюля	Neat
+гигиена падает быстрее; грязь сильно портит настроение	hygiene drops faster; dirt badly spoils the mood
+Романтик	Romantic
+романтика развивается вдвое быстрее	romance grows twice as fast
+Трудоголик	Workaholic
++25% к зарплате, работа почти не утомляет	+25% salary, work barely tires
+Лентяй	Lazy
+отдыхает в 1.5 раза быстрее, но работает хуже	rests 1.5x faster, but works worse
+Книжный червь	Bookworm
+чтение веселит вдвое сильнее	reading is twice as fun
+Семьянин	Family-oriented
+дети и партнёр радуют вдвое сильнее	kids and partner bring twice the joy
+Кулинария	Culinary
+Поварёнок	Kitchen helper
+Помощник повара	Cook's assistant
+Повар	Cook
+Шеф-повар	Head chef
+Легенда кухни Азерота	Kitchen legend of Azeroth
+Стража	Guard
+Новобранец	Recruit
+Стражник	Guardsman
+Сержант	Sergeant
+Капитан стражи	Guard captain
+Командор	Commander
+Магия	Magic
+Ученик	Apprentice
+Подмастерье	Journeyman
+Чародей	Enchanter
+Магистр	Magister
+Архимаг	Archmage
+Торговля	Trade
+Подсобник	Stockboy
+Лоточник	Peddler
+Торговец	Merchant
+Купец	Trader
+Торговый барон	Trade baron
+Искусство	Arts
+Уличный музыкант	Street musician
+Менестрель	Minstrel
+Бард	Bard
+Маэстро	Maestro
+Звезда таверн	Tavern star
+Медицина	Medicine
+Санитар	Orderly
+Медбрат	Nurse
+Лекарь	Physician
+Целитель	Healer
+Главный целитель	Chief healer
+Спорт	Sports
+Новичок	Rookie
+Атлет	Athlete
+Чемпион города	City champion
+Звезда арены	Arena star
+Легенда Азерота	Legend of Azeroth
+рагу из кабаньих рёбрышек	boar rib stew
+пирог с черникой	blueberry pie
+жареную рыбу	fried fish
+суп из кодо	kodo soup
+лепёшки с мёдом	honey flatbread
+шашлычок из волчатины	wolf kebab
+омлет из яиц дракондора	dragonhawk egg omelette
+печёный картофель по-дворфийски	dwarven baked potatoes
+«Тайны Лордерона, том II»	"Secrets of Lordaeron, Vol. II"
+«Как приручить гиппогрифа»	"How to Tame a Hippogryph"
+«Кулинария для гоблинов»	"Cooking for Goblins"
+«Дневник рассеянного гнома»	"Diary of an Absent-Minded Gnome"
+«Любовь в Даларане»	"Love in Dalaran"
+«Сто способов не умереть в Нордсколе»	"A Hundred Ways Not to Die in Northrend"
+«Сказки бабушки-таурена»	"Grandma Tauren's Tales"
+«Тролли: правда и вымысел»	"Trolls: Fact and Fiction"
+Рад тебя видеть,	Good to see you,
+О, это снова ты! Как дела?	Oh, it's you again! How are you?
+Ты всегда поднимаешь мне настроение.	You always cheer me up.
+Привет, дружище!	Hello, friend!
+Э-э... здравствуйте.	Uh... hello.
+Мы знакомы?	Do we know each other?
+Хм. Ну, привет.	Hm. Well, hi.
+Добрый день.	Good day.
+Отстань от меня!	Leave me alone!
+Опять ты?!	You again?!
+Иди своей дорогой.	Go your own way.
+Ещё раз — и позову стражу.	One more time and I'll call the guards.
+Ха-ха-ха! Ну ты даёшь!	Ha-ha-ha! You're something else!
+Ой, не могу! Ха-ха!	Oh, I can't! Ha-ha!
+Смешно, смешно.	Funny, funny.
+Хе-хе, хорошая шутка.	Heh, good one.
+...Это была шутка?	...Was that a joke?
+Не смешно.	Not funny.
+Эм. Ладно.	Um. Okay.
+Это мне? Спасибо огромное!	For me? Thank you so much!
+Какой чудесный подарок!	What a wonderful gift!
+Ты так добр ко мне!	You're so kind to me!
+Как грубо!	How rude!
+Да как ты смеешь?!	How dare you?!
+Хамло!	Boor!
+Я это запомню.	I'll remember that.
+Ох... ты меня смущаешь.	Oh... you're making me blush.
+*краснеет*	*blushes*
+Может, поужинаем вместе?	Maybe we could have dinner together?
+Ты такой милый сегодня.	You're so sweet today.
+Эм... это было неловко.	Um... that was awkward.
+Мы не настолько близки!	We're not that close!
+Держи дистанцию, пожалуйста.	Keep your distance, please.
+Да! Конечно да!	Yes! Of course yes!
+Я так долго этого ждал(а)!	I've waited so long for this!
+С радостью!	With pleasure!
+Прости... я не готов(а).	Sorry... I'm not ready.
+Нет. Давай останемся друзьями.	No. Let's stay friends.
+Мне нужно подумать... Нет.	I need to think... No.
+Как ты мог(ла)?..	How could you?..
+Ну и уходи!	Fine, just go!
+*плачет*	*cries*
+Младенец	Baby
+Малыш	Toddler
+Ребёнок	Child
+Подросток	Teen
+Взрослый	Adult
+*агукает*	*coos*
+*улыбается*	*smiles*
+Уа-а-а!	Waaah!
+*сопит*	*sniffles*
+Хочу на ручки!	Up! Up!
+Смотри, жучок!	Look, a bug!
+Мама! Папа!	Mommy! Daddy!
+А это что?	What's that?
+А можно мне грифона?	Can I have a gryphon?
+Я буду великим магом!	I'll be a great mage!
+Мы скоро придём?	Are we there yet?
+Смотри, как я умею!	Look what I can do!
+Ну ма-а-ам...	Mo-o-om...
+Можно я пойду в рейд с друзьями?	Can I go raiding with my friends?
+Это так скучно.	This is so boring.
+Я уже взрослый(ая)!	I'm a grown-up already!
+Как дела у вас, родители?	How are you doing, folks?
+Я сегодня так устал(а) на работе.	I'm so tired after work today.
+Может, мне пора съехать?	Maybe it's time for me to move out?
+Спасибо, что вырастили меня.	Thank you for raising me.
+Артём	Artem
+Тимофей	Timothy
+Лев	Leo
+Мирон	Miron
+Ярослав	Yaroslav
+Гарет	Gareth
+Остин	Austin
+Дорин	Dorin
+Таль	Tal
+Брам	Bram
+Алиса	Alice
+Ева	Eva
+Мила	Mila
+Вера	Vera
+Лира	Lira
+Элия	Elia
+Сьюзи	Susie
+Ника	Nika
+Тесса	Tessa
+Ива	Iva
+Мама	Mom
+Папа	Dad
+[SimsCraft] нет таблицы character_sims_world — запустите «Обновить SimsCraft»	[SimsCraft] table character_sims_world is missing — run "Update SimsCraft"
+Энергичен	Energized
+Флиртует	Flirty
+Сосредоточен	Focused
+Уверен	Confident
+Игрив	Playful
+Грустит	Sad
+Зол	Angry
+Напряжён	Tense
+Смущён	Embarrassed
+Неуютно	Uncomfortable
+Скучает	Bored
+В оцепенении	Dazed
+Хорошо выспался	Well rested
+Чистота и свежесть	Fresh and clean
+Романтический вечер	Romantic evening
+Окрылён	Elated
+Поцелуй	A kiss
+Оскорблён	Insulted
+Получил пощёчину	Got slapped
+Неудачная шутка	Joke fell flat
+Отказ	Rejected
+Расставание	Breakup
+Свадьба!	Wedding!
+Новорождённый в семье	Newborn in the family
+Отличная смена	Great shift
+Повышение!	Promotion!
+Новое умение	New skill
+Цель достигнута	Goal achieved
+Изысканное блюдо	Gourmet meal
+Бодрящий чай	Invigorating tea
+Хорошая книга	Good book
+Звёздное небо	Starry sky
+Прилив сил	Energy boost
+Муза посетила	The muse visited
+Смешная передача	Funny show
+Романтический фильм	Romantic movie
+Новости	News
+Спортивный матч	Sports match
+Коктейль	Cocktail
+День рождения	Birthday
+Праздник	Holiday
+День любви	Love Day
+Солнечный денёк	Sunny day
+Промок до нитки	Soaked to the bone
+Холодно	Cold
+Простуда	Caught a cold
+Удар током	Electric shock
+Свет отключили	Power outage
+Подарок	Gift
+Эликсир радости	Elixir of joy
+Зелье вдохновения	Potion of inspiration
+Победа в бою	Victory in battle
+Объятия	Hugs
+Время с детьми	Time with the kids
+Уютный дом	Cozy home
+Гости в доме	Guests at home
+Горячая пицца	Hot pizza
+Плохие оценки ребёнка	Child's bad grades
+|cff4fc3f7[SimsCraft]|r Мудлет: |cffffd100	|cff4fc3f7[SimsCraft]|r Moodlet: |cffffd100
+Умирает с голоду	Starving
+Голоден	Hungry
+Валится с ног	Exhausted
+Устал	Tired
+Грязный	Dirty
+Надо в туалет	Needs the toilet
+Скучно	Bored
+Одиноко	Lonely
+Всё отлично	All good
+Фитнес	Fitness
+Логика	Logic
+Обаяние	Charisma
+Живопись	Painting
+Музыка	Music
+Писательство	Writing
+Программирование	Programming
+Мастерство	Handiness
+Садоводство	Gardening
+Рыбалка	Fishing
+Барменство	Mixology
+Комедия	Comedy
+Танцы	Dancing
+Озорство	Mischief
+Видеоигры	Video gaming
+|cff40ff40Навык «	|cff40ff40Skill "
+»: уровень	": level
+: уровень	: level
+Мастер кулинарии	Master chef
+Любящий родитель	Loving parent
+Богатство	Wealth
+Творец	Creator
+Учёный	Scholar
+Садовод	Gardener
+Зелье бодрости (энергия 100%)	Potion of vigor (energy 100%)
+Сытный эликсир (голод 100%)	Hearty elixir (hunger 100%)
+Эликсир радости (Счастлив +3)	Elixir of joy (Happy +3)
+Зелье вдохновения (Вдохновлён +3)	Potion of inspiration (Inspired +3)
+Лекарство (вылечить простуду)	Medicine (cure a cold)
+Черта «Быстрый ученик» (навыки ×1.5)	Trait "Quick learner" (skills x1.5)
+Черта «Крепкий мочевой пузырь»	Trait "Iron bladder"
+Черта «Соня» (сон вдвое полезнее)	Trait "Sleepyhead" (sleep twice as effective)
+Приготовить блюд	Cook meals
+Провести время с детьми	Spend time with kids
+Вырастить ребёнка	Raise a child
+Пообщаться	Socialize
+Романтических вечеров	Romantic evenings
+Поцелуев	Kisses
+Отработать смен	Work shifts
+Нарисовать картин	Paint pictures
+Написать книг	Write books
+Тренировок	Workouts
+Собрать урожай	Harvest crops
+Завести детей:	Have children:
+Вступить в брак	Get married
+Накопить	Save up
+золотых	gold
+Друзей (дружба 50+):	Friends (friendship 50+):
+|cff40ff40Стремление «	|cff40ff40Aspiration "
+»: этап	": stage
+из 3 выполнен!|r +	of 3 complete!|r +
+очков удовлетворения.	satisfaction points.
+Стремление: этап	Aspiration: stage
+выполнен!	complete!
+Стремление: |cffffd100	Aspiration: |cffffd100
+Эта черта у вас уже есть.	You already have this trait.
+Не хватает очков удовлетворения: нужно	Not enough satisfaction points: you need
+Награда получена: |cffffd100	Reward received: |cffffd100
+встречаетесь	dating
+супруги	married
+бывшие	exes
+|cffff4040Враг|r	|cffff4040Enemy|r
+|cffff9040Неприязнь|r	|cffff9040Dislike|r
+Знакомый	Acquaintance
+|cffa0ff80Приятель|r	|cffa0ff80Buddy|r
+|cff40ff40Друг|r	|cff40ff40Friend|r
+|cff40ffffЛучший друг|r	|cff40ffffBest friend|r
+|cffff9ad5Ваша дочь|r	|cffff9ad5Your daughter|r
+|cff8ac8ffВаш сын|r	|cff8ac8ffYour son|r
+, |cffff80ffсупруги|r	, |cffff80ffmarried|r
+, |cffff80ffвстречаетесь|r	, |cffff80ffdating|r
+, |cff999999бывшие|r	, |cff999999exes|r
+, |cffff80ffвлюблённость|r	, |cffff80ffin love|r
+, |cffff80ffсимпатия|r	, |cffff80ffcrush|r
+Мальчик	Boy
+Сын	Son
+Дочь	Daughter
+Отношения с |cffffd100	Relationship with |cffffd100
+|cffaaaaaaНа сегодня отношения с	|cffaaaaaaYour relationship with
+уже не растут — продолжите завтра.|r	won't grow any more today — continue tomorrow.|r
+|cffff4040Вы рухнули от усталости и уснули прямо здесь.|r	|cffff4040You collapsed from exhaustion and fell asleep right here.|r
+|cffff4040Ой... С вами случилась неприятность. Срочно помойтесь!|r	|cffff4040Oops... You had an accident. Wash up right away!|r
+Эмоция: |cffffd100	Emotion: |cffffd100
+(опыт	(XP
+Заказ в таверну! Соберите продукты из корзин вокруг и приготовьте блюдо в котле.	A tavern order! Gather ingredients from the baskets around and cook the dish in the cauldron.
+Вы набрали свежих продуктов	You gathered fresh ingredients
+Вы приготовили блюдо на заказ — посетители в восторге!	You cooked the ordered dish — the guests are delighted!
+Обход территории: пройдите по постам и зажгите сигнальные факелы, потом доложите у знамени.	Patrol: visit the posts and light the signal torches, then report at the banner.
+Пост проверен, факел зажжён	Post checked, torch lit
+Вы доложили капитану: всё спокойно.	You reported to the captain: all quiet.
+Добыча магических материалов: извлеките эссенцию из кристаллов и зачаруйте её в рунном круге.	Gathering magical materials: extract essence from the crystals and enchant it in the rune circle.
+Вы извлекли магическую эссенцию	You extracted magical essence
+Рунный круг вспыхнул: материалы зачарованы!	The rune circle flares: the materials are enchanted!
+Поставка товара: перенесите ящики к прилавку (по одному).	Delivery: carry the crates to the stall (one at a time).
+Вы подняли ящик с товаром — несите к прилавку	You picked up a crate of goods — carry it to the stall
+Товар выложен и распродан!	The goods are laid out and sold!
+Уличные выступления: выступите на каждой сцене, потом соберите монеты из шляпы.	Street performance: perform on every stage, then collect coins from the hat.
+Вы выступили — публика аплодирует	You performed — the crowd applauds
+Вы собрали монеты из шляпы.	You collected coins from the hat.
+Обход больных: осмотрите и вылечите пациентов, потом доложите главному целителю у знамени.	Ward rounds: examine and cure the patients, then report to the chief healer at the banner.
+Пациент осмотрен и вылечен	Patient examined and cured
+Вы сдали отчёт: все пациенты здоровы!	You filed your report: all patients are healthy!
+Тренировка-забег: обегите все флажки на трассе и вернитесь к знамени.	Training run: run past every flag on the track and return to the banner.
+Флажок взят	Flag taken
+Финиш! Отличное время.	Finish! Great time.
+Вы получили материалы за работу (×	You received materials for your work (x
+Смена окончена	Shift over
+! Зарплата: |cffffd100	! Salary: |cffffd100
+|r. Успеваемость +	|r. Performance +
+, все задания выполнены	, all tasks done
+(выполнено	(done
+|cff40ff40Повышение!|r Новая должность: |cffffd100	|cff40ff40Promotion!|r New position: |cffffd100
+|r. Премия:	|r. Bonus:
+Повышение:	Promotion:
+Вы уже на смене.	You're already on shift.
+У вас нет работы. Выберите карьеру у Хранителя жизни.	You don't have a job. Choose a career at the Life Keeper.
+Сначала закончите бой.	Finish the fight first.
+Работать можно только в открытом мире.	You can only work in the open world.
+Вы слишком устали для работы. Поспите.	You're too tired to work. Get some sleep.
+На голодный желудок не работают. Поешьте.	No working on an empty stomach. Eat something.
+На смену	On shift
+мин.	min.
+Это чужая работа.	That's someone else's job.
+Сначала отнесите ящик, который у вас в руках.	First deliver the crate you're carrying.
+|cff40ff40Почти готово!|r Завершите работу у объекта перед вами.	|cff40ff40Almost done!|r Finish the job at the object in front of you.
+Сначала принесите ящик.	First bring a crate.
+Сначала выполните все задания (осталось	First finish all tasks (remaining
+У вас пока нет детей.	You don't have any children yet.
+Детей можно позвать только в открытом мире.	You can only call the kids in the open world.
+Иду!	Coming!
+Бегу-бегу!	Running, running!
+Куда идём?	Where are we going?
+Ура, гулять!	Yay, a walk!
+Дети прибежали к вам!	The kids ran up to you!
+Не получилось позвать детей.	Couldn't call the kids.
+Бегу домой!	Running home!
+Я буду играть дома!	I'll play at home!
+Хорошо!	Okay!
+Пока! Я домой!	Bye! I'm going home!
+До вечера!	See you tonight!
+Увидимся дома!	See you at home!
+Дети пошли домой.	The kids went home.
+С вами сейчас нет детей.	No kids are with you right now.
+сын	son
+дочь	daughter
+|cffff80ffУ вас родился(ась)	|cffff80ffYou have a new
+!|r Имя по умолчанию: |cffffd100	!|r Default name: |cffffd100
+|r. Его можно сменить в окне семьи.	|r. You can change it in the family window.
+Поздравляем! У вас	Congratulations! You have a
+Строить и ставить мебель можно только в открытом мире.	You can build and place furniture only in the open world.
+Слишком много предметов (максимум	Too many items (max
+). Продайте что-нибудь.	). Sell something.
+Не хватает денег: нужно	Not enough money: you need
+Перестановка:	Moving:
+Расстановка:	Placing:
+|r. Двигайте предмет в окне SimsCraft и нажмите «Поставить».	|r. Move the item in the SimsCraft window and press "Place".
+Слишком далеко от вас. Подойдите ближе.	Too far from you. Come closer.
+Отменено.	Cancelled.
+Не хватает денег.	Not enough money.
+Не удалось поставить предмет здесь.	Can't place the item here.
+Переставлено: |cffffd100	Moved: |cffffd100
+Куплено: |cffffd100	Bought: |cffffd100
+|r за	|r for
+Поздравляем с новосельем! Теперь это ваш дом (|cffffd100.sims home|r).	Congratulations on your new home! This is your home now (|cffffd100.sims home|r).
+Это место стало вашим домом (|cffffd100.sims home|r).	This place is now your home (|cffffd100.sims home|r).
+Рядом нет ваших предметов.	None of your items are nearby.
+Этот предмет нельзя переставить.	This item can't be moved.
+Продано:	Sold:
+предмет	item
+. Возвращено	. Refunded
+Не до сна — вы в бою!	No time for sleep — you're in combat!
+Вы забрались в кровать. Сладких снов! (подвигайтесь, чтобы встать)	You climbed into bed. Sweet dreams! (move to get up)
+Плита ещё горячая. Подождите	The stove is still hot. Wait
+сек.	sec.
+Вы приготовили и съели	You cooked and ate
+. Вкуснотища!	. Delicious!
+Вы уже в ванне.	You're already in the bath.
+Сейчас не время для ванны.	Now is not the time for a bath.
+Вы погрузились в горячую ванну с пеной... (	You sink into a hot bubble bath... (
+сек)	sec)
+Вы приняли ванну и благоухаете, как цветок Мирового древа.	You took a bath and smell like a World Tree blossom.
+Вы только что умывались.	You just washed up.
+Вы умылись. Свежо!	You washed up. Refreshing!
+Сначала спешьтесь.	Dismount first.
+Какое облегчение! Не забудьте помыть руки.	What a relief! Don't forget to wash your hands.
+*занято*	*occupied*
+Вы ещё обдумываете прочитанное. Подождите	You're still thinking about what you read. Wait
+Вы почитали	You read
+Вы только что поели. Подождите	You just ate. Wait
+Вы пообедали в приятной компании.	You had lunch in pleasant company.
+Вы пообедали за столом.	You had lunch at the table.
+Нужно передохнуть. Подождите	You need a break. Wait
+играет музыку. Веселье +8.	plays some music. Fun +8.
+Вы сыграли зажигательную мелодию!	You played a lively tune!
+Огонь и так горит. Подождите	The fire is already burning. Wait
+Вы погрелись у камина. Уютно...	You warmed up by the fireplace. Cozy...
+Подождите	Wait
+Вы бросили монетку в фонтан и загадали желание.	You tossed a coin into the fountain and made a wish.
+Вы поиграли вместе с детьми. Все довольны!	You played with the kids. Everyone's happy!
+Вы немного поиграли. Детство вспомнилось!	You played for a bit. Brings back childhood!
+В яблочко!	Bullseye!
+Почти в центр!	Almost in the center!
+Мимо... Ещё разок!	Missed... One more time!
+Вы устроили пикник!	You had a picnic!
+Домашняя одежда	Home clothes
+Халат	Robe
+Простое платье / рубаха	Simple dress / shirt
+Нарядная одежда	Fancy outfit
+Деловой костюм	Business suit
+Свадебный наряд	Wedding attire
+|cff4fc3f7Гардероб|r — сменить одежду (меняется только внешний вид)	|cff4fc3f7Wardrobe|r — change clothes (only the look changes)
+Мой наряд	My outfit
+Запомнить, как я сейчас одет(а), как наряд	Save what I'm wearing now as outfit
+Снова носить свою экипировку	Wear my own gear again
+Вы снова в своей экипировке.	You're back in your own gear.
+Вы переоделись: |cffffd100	You changed into: |cffffd100
+Вы надели свой наряд	You put on your outfit
+Наряд	Outfit
+запомнен.	saved.
+Вы сели перед зеркалом. Выберите причёску в открывшемся окне.	You sat down at the mirror. Choose a hairstyle in the window that opens.
+|cff4fc3f7Тумбочка с зеркалом|r	|cff4fc3f7Vanity with mirror|r
+Посмотреть в зеркало: причёска, цвет волос, борода	Look in the mirror: hairstyle, hair color, beard
+Сменить одежду	Change clothes
+Привести себя в порядок (гигиена, настроение)	Freshen up (hygiene, mood)
+Вы уже прихорашивались. Подождите	You've already freshened up. Wait
+Вы причесались и поправили одежду. Красота!	You combed your hair and straightened your clothes. Gorgeous!
+Сундук открыт: здесь лежат вещи вашего банка — складывайте и забирайте.	Chest opened: your bank items are here — store and take them.
+Кровать	Bed
+Плита / очаг	Stove / hearth
+Обеденный стол	Dining table
+Стул / скамья	Chair / bench
+Ванна	Bathtub
+Умывальник	Wash basin
+Книги	Books
+Камин	Fireplace
+Шкаф	Wardrobe
+Зеркало	Mirror
+Метки ставятся только внутри вашего готового дома.	Markers can only be placed inside your ready-made house.
+Слишком много меток (максимум	Too many markers (max
+|cff40ff40Отмечено:|r	|cff40ff40Marked:|r
+. Теперь эта мебель дома работает (кнопка «Действие» или /sleep рядом с кроватью).	. This furniture in the house works now (the "Action" button or /sleep next to the bed).
+Рядом нет меток.	No markers nearby.
+Метка «	Marker "
+» убрана.	" removed.
+Рядом нет мебели, которой можно воспользоваться.	No usable furniture nearby.
+|cff4fc3f7Обустройство дома|r: встаньте у мебели внутри дома и выберите, что это	|cff4fc3f7Furnishing the house|r: stand by a piece of furniture inside the house and choose what it is
+Здесь	Here
+Убрать ближайшую метку	Remove the nearest marker
+Показать метки (	Show markers (
+Вы уже чем-то заняты.	You're already busy with something.
+|cffff8040Сломано!|r Предмет не работает.	|cffff8040Broken!|r The item doesn't work.
+Починить самому (навык «Мастерство»:	Repair it yourself (skill "Handiness":
+Вызвать мастера (	Call a repairman (
+Мастер всё починил.	The repairman fixed everything.
+Вы чините...	You're repairing...
+|cff40ff40Починено!|r	|cff40ff40Repaired!|r
+|cffff4040Вас ударило током!|r Попробуйте ещё раз.	|cffff4040You got an electric shock!|r Try again.
+Не получилось. Попробуйте ещё раз — опыт растёт.	Didn't work. Try again — your skill grows.
+|cffff8040Свет отключили за неуплату.|r Оплатите счета (телефон в панели).	|cffff8040Power cut off for non-payment.|r Pay the bills (phone in the panel).
+|cffff8040Ой! Что-то сломалось.|r Нужен ремонт.	|cffff8040Oops! Something broke.|r It needs repair.
+Вы готовите...	You're cooking...
+Получилось изысканное блюдо:	You made a gourmet meal:
+|cff4fc3f7Кладовая|r	|cff4fc3f7Pantry|r
+Перекусить (голод +25)	Have a snack (hunger +25)
+Приготовить ужин на всю семью	Cook dinner for the whole family
+Выпить чаю (энергия, бодрость)	Drink some tea (energy, vigor)
+Вы перекусили.	You had a snack.
+Вы готовите ужин для всей семьи...	You're cooking dinner for the whole family...
+Семейный ужин удался! Все сыты и довольны.	Family dinner was a success! Everyone is full and happy.
+Чай с мёдом. Бодрит!	Tea with honey. Invigorating!
+|cff4fc3f7Гномий терминал|r	|cff4fc3f7Gnomish terminal|r
+Играть в игры (веселье, «Видеоигры»)	Play games (fun, "Video gaming")
+Программировать (с 3 уровня — заказы за деньги)	Program (from level 3 — paid gigs)
+Писать книгу (	Write a book (
+/100 страниц)	/100 pages)
+Общаться в сети (общение)	Chat online (social)
+Каталог мебели	Furniture catalog
+Оплатить счета	Pay the bills
+Вы прошли уровень в «Гоблинских гонках»!	You beat a level in "Goblin Racers"!
+Заказ выполнен! Оплата:	Gig complete! Payment:
+Вы учились программировать.	You practiced programming.
+|cff40ff40Книга дописана!|r Издательство будет платить	|cff40ff40Book finished!|r The publisher will pay
+в игровой день, 7 дней.	per game day, for 7 days.
+Вы написали несколько страниц.	You wrote a few pages.
+Вы поболтали с друзьями в сети.	You chatted with friends online.
+|cff4fc3f7Хрустальный шар|r — что посмотреть?	|cff4fc3f7Crystal ball|r — what to watch?
+Комедию	A comedy
+Кулинарное шоу (+кулинария)	Cooking show (+cooking)
+Новости Азерота	Azeroth News
+Арену (спорт, +фитнес)	The Arena (sports, +fitness)
+Вы смотрите передачу...	You're watching a show...
+Вы рисуете картину...	You're painting a picture...
+Картина «	Painting "
+» продана за	" sold for
+Закат над Элвиннским лесом	Sunset over Elwynn Forest
+Портрет гнома	Portrait of a Gnome
+Буря в Нордсколе	Storm in Northrend
+Натюрморт с яблоком	Still Life with Apple
+Дракон в облаках	Dragon in the Clouds
+Мой дом	My Home
+Вы играете в шахматы...	You're playing chess...
+Шах и мат! Победа.	Checkmate! Victory.
+Партия проиграна, но вы многому научились.	You lost the game, but learned a lot.
+Слишком мало сил для тренировки.	Too little energy for a workout.
+Вы тренируетесь с чучелом...	You're training with the dummy...
+Вы смешиваете коктейль...	You're mixing a cocktail...
+Коктейль «	Cocktail "
+Огонь Пылающих степей	Burning Steppes Fire
+Лунный свет Даларана	Dalaran Moonlight
+Гоблинская ракета	Goblin Rocket
+Тихая гавань	Quiet Harbor
+» удался!	" turned out great!
+Вы изучаете звёздный глобус...	You're studying the star globe...
+Сейчас |cffffd100	It's |cffffd100
+. Погода:	. Weather:
+Вы ухаживаете за растением...	You're tending the plant...
+Урожай собран (×	Harvest gathered (x
+Сегодня урожай уже собран. Приходите завтра.	The harvest is already gathered today. Come back tomorrow.
+|cff4fc3f7Праздничный торт|r	|cff4fc3f7Celebration cake|r
+День рождения:	Birthday:
+задувает свечи	blows out the candles
+Съесть кусочек	Eat a slice
+Вкусно!	Yummy!
+Ура! Мне исполнилось... я стал(а) больше!	Yay! I'm older... I got bigger!
+|cffff80ffС днём рождения,	|cffff80ffHappy birthday,
+!|r Теперь:	!|r Now:
+Слушатели бросают монеты:	Listeners toss coins:
+Поболтать	Chat
+Пошутить	Tell a joke
+Сделать комплимент	Compliment
+Обнять	Hug
+обнимает	hugs
+Подарить подарок	Give a gift
+Флиртовать	Flirt
+Поцеловать	Kiss
+целует	kisses
+Предложить встречаться	Ask to date
+Сделать предложение	Propose
+Завести ребёнка	Have a baby
+Поспорить	Argue
+Оскорбить	Insult
+Дать пощёчину	Slap
+даёт пощёчину	slaps
+Расстаться	Break up
+мин	min
+сек	sec
+Это ваш ребёнок.	This is your child.
+Это ребёнок.	This is a child.
+Вы знакомы слишком недавно. Предложить встречаться можно через	You met too recently. You can ask to date in
+Рано для предложения. Ещё	Too early to propose. Another
+отношений.	of relationship.
+Пока рано думать о детях. Ещё	Too early to think about kids. Another
+Вы недостаточно дружны для этого (нужна дружба	You're not close enough friends for that (friendship needed
+Нужно больше романтики (	You need more romance (
+Сначала начните встречаться.	Start dating first.
+Это возможно только с вашим партнёром.	That's only possible with your partner.
+Вы уже в отношениях с	You're already in a relationship with
+другим	someone else
+Вы уже вместе.	You're already together.
+Романтический вечер — дома, в спальне.	A romantic evening happens at home, in the bedroom.
+Ребёнок уже в пути!	A baby is already on the way!
+У вас и так большая семья.	Your family is big enough already.
+Сначала обзаведитесь домом.	Get a home first.
+Для этого нужно быть дома.	You need to be at home for that.
+Подарок стоит	The gift costs
+— не хватает денег.	— not enough money.
+Вы ждёте ребёнка!	You're expecting a baby!
+В вашей семье скоро пополнение!	Your family is about to grow!
+|r Малыш появится через	|r The baby will arrive in
+В этот раз малыша не будет. Попробуйте ещё раз позже.	No baby this time. Try again later.
+|cffff80ffЧудесный вечер с	|cffff80ffA wonderful evening with
+Для этого нужна кровать дома. Купите её в каталоге или отметьте встроенную («Обустр.»).	You need a bed at home for that. Buy one in the catalog or mark a built-in one ("Furnish").
+отказывает.|r	says no.|r
+Свадьба! Вы и	A wedding! You and
+теперь супруги!	are now married!
+и	and
+поженились! Поздравьте молодых!	got married! Congratulate the newlyweds!
+соглашается! Вы теперь	agrees! You are now
+ждёт от вас ребёнка!	is expecting your baby!
+В этот раз не получилось. Попробуйте ещё раз позже.	It didn't work this time. Try again later.
+Вы расстались с	You broke up with
+». Общение +4.	". Social +4.
+ведёт себя грубо с вами.	is being rude to you.
+Выделите персонажа или NPC.	Select a character or NPC.
+Это вы сами :)	That's you :)
+Сейчас не время.	Now is not the time.
+Им сейчас не до вас.	They're busy right now.
+Подойдите ближе.	Come closer.
+Не так быстро.	Not so fast.
+» с	" with
+можно снова через	is possible again in
+предлагает: «	suggests: "
+». Ответьте в окне SimsCraft.	". Answer in the SimsCraft window.
+Ждём ответа	Waiting for an answer
+Запрос устарел.	The request has expired.
+Игрок уже не в сети.	The player is no longer online.
+Вы слишком далеко друг от друга.	You're too far from each other.
+отказывается: «	refuses: "
+Вы отказались.	You declined.
+Вы согласились.	You agreed.
+Вы улеглись спать. В кровати сон вдвое полезнее.	You lay down to sleep. Sleep in a bed is twice as effective.
+|cffffb040Ваши дети скучают. Зайдите домой или позовите их и поиграйте с ними.|r	|cffffb040Your kids miss you. Go home or call them and play with them.|r
+Слышал новости?	Heard the news?
+Какие ещё новости?	What news?
+Говорят, Король-лич опять что-то затевает.	They say the Lich King is up to something again.
+Ох, лишь бы не у нас...	Oh, I hope it's not around here...
+Цены на хлеб опять выросли.	Bread prices went up again.
+И не говори. Скоро будем есть одну репу.	Don't get me started. Soon we'll be eating nothing but turnips.
+Зато репа полезная!	Well, turnips are healthy!
+Видел,	Did you see
+обзавёлся(ась) хозяйством?	got a place of their own?
+Да, говорят, дом себе прикупил(а).	Yes, they say they bought a house.
+Вот бы и мне так...	I wish I could too...
+Как твоя семья?	How's your family?
+Младший опять залез на крышу.	The youngest climbed onto the roof again.
+Весь в отца!	Just like his father!
+Это точно.	That's for sure.
+Погода сегодня чудесная.	Lovely weather today.
+Только бы дождя не было.	As long as it doesn't rain.
+Да какой дождь, ни облачка!	What rain, not a cloud in the sky!
+Ты пробовал(а) похлёбку в таверне?	Have you tried the stew at the tavern?
+Пробовал(а). Лучше бы не пробовал(а).	I have. I wish I hadn't.
+Ха-ха! Повар опять напутал со специями.	Ha-ha! The cook mixed up the spices again.
+Ночью кто-то выл в лесу.	Something was howling in the woods last night.
+Это волки. Или ворген...	Wolves. Or a worgen...
+Не пугай меня так!	Don't scare me like that!
+Мне снился дракон.	I dreamed of a dragon.
+Красный или чёрный?	Red or black?
+Не помню. Но он просил пирожок.	Don't remember. But it asked for a pie.
+Работы невпроворот.	So much work to do.
+Отдыхать тоже надо.	You need to rest too.
+Вот закончу — и сразу в таверну.	Once I'm done — straight to the tavern.
+Ты слышал(а), как поёт бард у фонтана?	Have you heard the bard singing by the fountain?
+Слышал(а). Медведь на ухо наступил.	I have. Tone deaf.
+Зато громко!	But loud!
+Эх, вот бы отпуск на Кабестан...	Ah, a vacation in Booty Bay would be nice...
+Там же пираты.	There are pirates there.
+Пираты тоже люди. Ну, гоблины.	Pirates are people too. Well, goblins.
+Здравствуй, сосед!	Hello, neighbor!
+И тебе не хворать!	Hello to you too!
+Заходи вечером на чай.	Come by for tea tonight.
+Обязательно!	I definitely will!
+Хорошая сегодня погода.	Nice weather today.
+Пора бы перекусить...	Time for a snack...
+Ох, спина моя, спина.	Oh, my back, my back.
+Где же я оставил(а) ключи?	Where did I leave my keys?
+Так, что я хотел(а) сделать?	Now, what was I going to do?
+*напевает песенку*	*hums a tune*
+*зевает*	*yawns*
+Надо бы заглянуть на рынок.	I should stop by the market.
+*храпит*	*snores*
+*бормочет во сне*	*mumbles in sleep*
+Подходите, не стесняйтесь!	Step right up, don't be shy!
+Лучшие товары в городе!	Best goods in town!
+Свежий завоз, только сегодня!	Fresh shipment, today only!
+Чем могу помочь,	How can I help you,
+Эй, путник! Загляни ко мне!	Hey, traveler! Come take a look!
+*протирает прилавок*	*wipes the counter*
+Ох, и работы сегодня...	Oh, so much work today...
+Поздно уже, пойду домой.	It's late, I'm going home.
+Всё, домой, спать.	That's it, home and bed.
+Спокойной ночи,	Good night,
+*зевает* Пора на боковую.	*yawns* Time to turn in.
+Доброе утро!	Good morning!
+*потягивается*	*stretches*
+Ну, новый день!	Well, a new day!
+Привет,	Hi,
+! Рад тебя видеть!	! Good to see you!
+О,	Oh,
+! Как поживаешь?	! How are you doing?
+! Заходи как-нибудь в гости!	! Drop by for a visit sometime!
+Здравствуйте,	Hello,
+Хорошего дня!	Have a nice day!
+Музыка! Танцуем!	Music! Let's dance!
+Эх, раз, ещё раз!	One more time!
+Вечер — время веселья!	Evening is time for fun!
+этот приезжий	this newcomer
+Я дома!	I'm home!
+Ну вот я и вернулся(ась).	Well, I'm back.
+Фух, ну и денёк был.	Phew, what a day.
+С возвращением,	Welcome back,
+Я так скучал(а) по тебе,	I missed you so much,
+, ужин почти готов!	, dinner's almost ready!
+Сейчас приготовлю что-нибудь вкусное.	I'll cook something tasty.
+Кто съел последний пирожок?!	Who ate the last pie?!
+Мм, пахнет отлично!	Mm, smells great!
+Интересная книга...	Interesting book...
+Ты читал(а) это?	Have you read this?
+*листает страницы*	*turns the pages*
+Как хорошо дома.	It's so nice to be home.
+Посижу немного.	I'll sit for a while.
+Уютно у нас.	It's cozy here.
+Приятного аппетита!	Enjoy your meal!
+Вкусно получилось.	That turned out tasty.
+Добавки?	Seconds?
+Пора спать. Спокойной ночи,	Time for bed. Good night,
+Я спать. Не засиживайся допоздна!	I'm off to bed. Don't stay up too late!
+*зевает* Всё, в кровать.	*yawns* That's it, bedtime.
+*сладко спит*	*sleeping sweetly*
+Доброе утро,	Good morning,
+*потягивается* Уже утро?	*stretches* Is it morning already?
+Кто первый в умывальник?	Who's first to the wash basin?
+Как прошёл день,	How was your day,
+Может, сходим вечером в таверну?	Shall we go to the tavern tonight?
+Дети опять разбросали игрушки.	The kids scattered their toys again.
+Я тебя люблю,	I love you,
+Надо бы купить новый ковёр.	We should buy a new rug.
+Ты сегодня какой-то задумчивый(ая).	You seem thoughtful today.
+Дети, не шумите!	Kids, keep it down!
+Кто хочет пирожок?	Who wants a pie?
+Осторожно, не упади!	Careful, don't fall!
+Ну-ка, все мыть руки!	Okay, everyone wash your hands!
+Мне пора на работу. Вернусь вечером!	Time for work. I'll be back tonight!
+Всё, побежал(а) на работу.	Off to work.
+До вечера,	See you tonight,
+Всё, смена окончена — иду домой!	Shift's over — heading home!
+На сегодня хватит. Домой!	That's enough for today. Home!
+Пора домой, к семье.	Time to go home to the family.
+Снова за работу.	Back to work.
+Доброе утро! Работа ждёт.	Good morning! Work awaits.
+Ну, приступим.	Well, let's get to it.
+Догоняй!	Catch me!
+Ты водишь!	You're it!
+Чур, я рыцарь!	Dibs on the knight!
+Давай играть в драконов!	Let's play dragons!
+Ха-ха, не поймаешь!	Ha-ha, you can't catch me!
+Прятки! Раз, два, три...	Hide and seek! One, two, three...
+Смотри, что я нашёл(ла)!	Look what I found!
+Давай строить замок!	Let's build a castle!
+Я — Король-лич! Ууу!	I'm the Lich King! Ooooh!
+Ха-ха!	Ha-ha!
+Не догонишь!	Can't catch me!
+Ладно, давай!	Okay, let's go!
+Я первый(ая)!	I'm first!
+Ну погоди!	Just you wait!
+Вжжж!	Vrrrm!
+Мой грифон летит!	My gryphon is flying!
+*играет с игрушкой*	*plays with a toy*
+Бах-бах!	Bang-bang!
+Смотрите, как я умею!	Look what I can do!
+Спокойной ночи!	Good night!
+Почитаете сказку?..	Will you read me a story?..
+Ну можно ещё пять минуточек?	Just five more minutes?
+*ворочается во сне*	*tosses in sleep*
+Уже утро? Ура!	Morning already? Yay!
+Что на завтрак?	What's for breakfast?
+*читает книжку*	*reads a book*
+А тут про драконов!	This one's about dragons!
+*листает картинки*	*flips through pictures*
+! Как хорошо, что ты зашёл(ла)!	! I'm so glad you came by!
+Заходи, у нас как раз пирог!	Come in, we just made a pie!
+Мы тут обустроились, нравится?	We've settled in here, do you like it?
+Скучаю по дому, но здесь тоже хорошо.	I miss home, but it's nice here too.
+Передавай привет всем дома!	Say hi to everyone at home!
+Рад(а) познакомиться!	Nice to meet you!
+Вы, должно быть, родитель	You must be the parent of
+Заходите почаще!	Come visit more often!
+Добро пожаловать в наш дом.	Welcome to our home.
+пока не нашла(нашёл), куда переехать.	hasn't found a place to move to yet.
+у таверны, где работает	near the tavern of
+переехала	moved out
+переехал	moved out
+и живёт своей семьёй вместе с	and lives with their own family together with
+. Навещайте!	. Come visit!
+жить своей семьёй	to live with their own family
+|r выросла(вырос) и мечтает жить своей семьёй. Поговорите (ПКМ): отпустить или попросить остаться.	|r has grown up and dreams of living with their own family. Talk to them (right-click): let them go or ask them to stay.
+Я в школу!	Off to school!
+Пока, я на уроки!	Bye, I'm off to class!
+Опаздываю в школу!	I'm late for school!
+прогуливает школу! Оценки упадут.	is skipping school! Grades will drop.
+возвращается домой.	comes back home.
+понедельник	Monday
+вторник	Tuesday
+среда	Wednesday
+четверг	Thursday
+пятница	Friday
+суббота	Saturday
+воскресенье	Sunday
+весна	spring
+лето	summer
+осень	autumn
+зима	winter
+ясно	clear
+дождь	rain
+гроза	thunderstorm
+солнечно	sunny
+лёгкий дождь	light rain
+туман	fog
+морозно и ясно	frosty and clear
+снег	snow
+метель	blizzard
+Праздник летнего солнца	Midsummer Fire Festival
+Праздник урожая	Harvest Festival
+Зимний покров	Winter Veil
+|cffff80ffСегодня праздник:	|cffff80ffToday's holiday:
+Праздник:	Holiday:
+Подарок к празднику:	Holiday gift:
+Гонорар за книгу:	Book royalties:
+|cffffd100Пришли счета за дом:|r	|cffffd100House bills have arrived:|r
+. Оплатить за 3 дня (телефон или компьютер).	. Pay within 3 days (phone or computer).
+|cffff4040Свет отключили за неуплату!|r Компьютер, телевизор и кладовая не работают.	|cffff4040Power cut off for non-payment!|r The computer, TV and pantry don't work.
+Вы выздоровели!	You've recovered!
+|cffff8040Вы простудились.|r Сон в кровати и лекарство помогут быстрее (телефон → врач).	|cffff8040You caught a cold.|r Sleeping in bed and medicine will help (phone → doctor).
+Неоплаченных счетов нет.	No unpaid bills.
+Счета оплачены:	Bills paid:
+Вы уже в спальне.	You're already in the bedroom.
+|cffff80ffВы с	|cffff80ffYou and
+уходите в спальню...|r	head to the bedroom...|r
+прячутся под одеялом... *шорох и хихиканье*	hide under the blanket... *rustling and giggling*
+|cff4fc3f7Телефон|r	|cff4fc3f7Phone|r
+Позвонить супругу: «Приходи домой»	Call your spouse: "Come home"
+Позвать детей	Call the kids
+Пригласить в гости:	Invite over:
+(дружба	(friendship
+Заказать пиццу (	Order pizza (
+Вызвать врача (	Call a doctor (
+Оплатить счета (	Pay the bills (
+Выйти на смену	Go to work
+Стремление и награды	Aspiration and rewards
+Супруг(а) уже дома.	Your spouse is already home.
+«Уже иду, дорогой(ая)!»	"On my way, dear!"
+Пиццу привезут через минуту.	The pizza will arrive in a minute.
+|cffffd100Курьер:|r «Ваша пицца с сыром из Даларана!» Приятного аппетита.	|cffffd100Courier:|r "Your Dalaran cheese pizza!" Enjoy your meal.
+Врач выписал лекарство. Вы здоровы!	The doctor prescribed medicine. You're healthy!
+Пригласить в гости можно, когда вы дома.	You can invite guests when you're at home.
+У вас уже гости.	You already have guests.
+не может прийти.	can't come.
+: «С удовольствием! Уже иду.»	: "With pleasure! On my way."
+Спасибо за вечер! Мне пора.	Thanks for the evening! I have to go.
+! Спасибо, что позвали!	! Thanks for inviting me!
+Гость	Guest
+— ваш гость	— your guest
+Проводить гостя	See the guest off
+Очки удовлетворения: |cffffd100	Satisfaction points: |cffffd100
+|r — этап	|r — stage
+Цель:	Goal:
+Выбрать стремление:	Choose an aspiration:
+Награда:	Reward:
+очков	points
+Вы отлично выспались!	You slept great!
+Вы проснулись.	You woke up.
+чихает.	sneezes.
+сон (	sleep (
+): энергия +	): energy +
+|cffff80ffДвойня!|r	|cffff80ffTwins!|r
+[SimsCraft] ошибка тика:	[SimsCraft] tick error:
+[SimsCraft] супруг:	[SimsCraft] spouse:
+[SimsCraft] дети:	[SimsCraft] kids:
+[SimsCraft] жизнь NPC:	[SimsCraft] NPC life:
+[SimsCraft] гости:	[SimsCraft] guests:
+[SimsCraft] ошибка жизни NPC:	[SimsCraft] NPC life error:
+[SimsCraft] еды и напитков:	[SimsCraft] food and drinks:
+Поиграть	Play
+Почитать сказку	Read a story
+Помочь с уроками	Help with homework
+Покормить	Feed
+Поговорить по душам	Have a heart-to-heart
+Это чужой ребёнок. Он стесняется и прячется за родителя.	This is someone else's child. They're shy and hide behind their parent.
+. Счастье	. Happiness
+, развитие	, development
+Живёт своей семьёй с	Lives with their own family with
+Вернуться жить домой	Move back home
+Благословить: пусть живёт своей семьёй	Give your blessing: let them live with their own family
+Попросить остаться жить с нами	Ask them to stay and live with us
+Разрешить жить отдельно, когда захочет	Allow them to move out whenever they want
+Пойдём со мной!	Come with me!
+Иди домой	Go home
+Спасибо! Я буду часто заходить!	Thank you! I'll visit often!
+Хорошо, я останусь с вами.	Okay, I'll stay with you.
+Спасибо, что доверяете мне!	Thank you for trusting me!
+возвращается жить домой.	is moving back home.
+пока не хочет. Подождите	doesn't want to yet. Wait
+Уроки сделаны! Оценка:	Homework done! Grade:
+Ура!	Yay!
+Ещё!	More!
+Люблю тебя,	I love you,
+Здорово!	Awesome!
+. Счастье ребёнка	. Child's happiness
+Поговорить	Talk
+Супруг(а)	Spouse
+— дружба	— friendship
+, романтика	, romance
+Займись своими делами	Go about your business
+Данные ещё загружаются...	Data is still loading...
+Настроение: |c	Mood: |c
+|r, уют:	|r, comfort:
+Каталог мебели, стройка и дома	Furniture catalog, building and houses
+Моя семья	My family
+Черты характера (	Personality traits (
+Карьера	Career
+Мои отношения	My relationships
+Сделать это место моим домом	Make this place my home
+Стремление и награды (	Aspiration and rewards (
+очков)	points)
+Перекусить (голод +35)	Have a snack (hunger +35)
+Купить перекус?	Buy a snack?
+Убрать черту «	Remove trait "
+<< Назад	<< Back
+Вы безработный. Выберите карьеру:	You're unemployed. Choose a career:
+— начать с должности «	— start as "
+(ранг	(rank
+/5), успеваемость	/5), performance
+, смен:	, shifts:
+Вы на смене. Осталось	You're on shift. Remaining
+Выйти на смену (	Go to work (
+мин, около	min, about
+Уволиться	Quit
+Уволиться? Ранг и успеваемость будут потеряны.	Quit? Your rank and performance will be lost.
+Вы пока ни с кем не знакомы. Выделите кого-нибудь и откройте окно «Общение».	You don't know anyone yet. Select someone and open the "Social" window.
+У вас нет дома. Купите дом или мебель в каталоге.	You don't have a home. Buy a house or furniture in the catalog.
+Нельзя во время боя.	Not during combat.
+Телепорт домой будет доступен через	Teleport home will be available in
+Дом можно назначить только в открытом мире.	A home can only be set in the open world.
+Теперь это ваш дом.	This is your home now.
+Хранитель угостил вас горячей похлёбкой.	The Keeper treated you to a hot stew.
+Каталог открыт в окне SimsCraft. (Нужен аддон SimsCraft.)	The catalog is open in the SimsCraft window. (Requires the SimsCraft addon.)
+Не хватает денег, чтобы убрать черту.	Not enough money to remove the trait.
+Черта «	Trait "
+У вас уже	You already have
+черты. Сначала уберите одну.	traits. Remove one first.
+Новая черта: |cffffd100	New trait: |cffffd100
+Вы приняты: |cffffd100	You're hired: |cffffd100
+|r, должность «	|r, position "
+Вы уволились.	You quit.
+.sims — состояние; .sims rel — отношения; .sims family — семья	.sims — status; .sims rel — relationships; .sims family — family
+.sims shop — каталог; .sims move / .sims sell — переставить / продать ближайший свой предмет	.sims shop — catalog; .sims move / .sims sell — move / sell your nearest item
+.sims home / .sims sethome — дом; .sims kids — позвать детей; .sims work — смена	.sims home / .sims sethome — home; .sims kids — call the kids; .sims work — shift
+Окно «Общение» в аддоне: выделите кого-нибудь и выбирайте действие.	"Social" window in the addon: select someone and pick an action.
+.sims time — игровые часы; ГМ-отладка: .sims gm	.sims time — game clock; GM debug: .sims gm
+Данные не загружены.	Data not loaded.
+|r. Уют:	|r. Comfort:
+. Черты:	. Traits:
+нет	none
+Карьера:	Career:
+Карьера: нет	Career: none
+Отношений пока нет.	No relationships yet.
+Партнёр:	Partner:
+Партнёра нет.	No partner.
+Ребёнок появится через	The baby will arrive in
+, счастье	, happiness
+Использование: .sims set <hunger|energy|hygiene|fun|social|bladder> <0-100>	Usage: .sims set <hunger|energy|hygiene|fun|social|bladder> <0-100>
+Все потребности заполнены.	All needs are filled.
+Хранитель жизни поставлен и сохранён.	The Life Keeper has been placed and saved.
+Не удалось: проверьте, что world-SQL установлен.	Failed: check that the world SQL is installed.
+Роды ускорены.	Birth sped up.
+Ребёнка не ждут.	No baby is expected.
+Дети повзрослели на	The kids grew older by
+игр. дн.	game days.
+Игровое время:	Game time:
+Использование: .sims time ЧЧ[:ММ]	Usage: .sims time HH[:MM]
+Игровое время: |cffffd100	Game time: |cffffd100
+|r. Сутки длятся	|r. A day lasts
+мин реального времени.	min of real time.
+Использование: .sims skill <навык> <0-10>. Навыки:	Usage: .sims skill <skill> <0-10>. Skills:
+Очки удовлетворения:	Satisfaction points:
+Игровые сутки теперь длятся	A game day now lasts
+мин. Время:	min. Time:
+Использование: .sims daylen <минут на игровые сутки, 2..1440> (сейчас	Usage: .sims daylen <minutes per game day, 2..1440> (now
+Стены дома:	House walls:
+(auto / down / up)	(auto / down / up)
+Восстановление энергии во сне ×	Energy recovery in sleep x
+Скорость потребностей ×	Needs speed x
+Потребности	Needs
+заморожены	frozen
+снова идут	running again
+Ограничения скорости отношений	Relationship speed limits
+|cffff8080ОТКЛЮЧЕНЫ|r	|cffff8080DISABLED|r
+включены	enabled
+Отладочные сообщения	Debug messages
+выключены	disabled
+Выделите цель: .sims relset <дружба -100..100> [романтика 0..100]	Select a target: .sims relset <friendship -100..100> [romance 0..100]
+: дружба	: friendship
+Выделите цель: .sims partner <dating|married|ex|none>	Select a target: .sims partner <dating|married|ex|none>
+Статус с	Status with
+Живой мир:	Living world:
+выключен	off
+включён	on
+, занятых NPC:	, busy NPCs:
+Супруг(а) появился(ась) у дома.	Your spouse appeared at home.
+Нужен брак (.sims partner married на цели) и дом.	You need a marriage (.sims partner married on the target) and a home.
+Тик выполнен.	Tick done.
+предметов=	items=
+дом=	home=
+партнёр=	partner=
+дети=	kids=
+есть	yes
+.sims sleepx N — сон восстанавливает в N раз быстрее	.sims sleepx N — sleep restores N times faster
+.sims timex N — потребности идут в N раз быстрее	.sims timex N — needs drain N times faster
+.sims freeze — заморозить потребности	.sims freeze — freeze needs
+.sims fast — без ограничений скорости отношений	.sims fast — no relationship speed limits
+.sims relset F R / .sims partner dating|married|none — на выделенной цели	.sims relset F R / .sims partner dating|married|none — on the selected target
+.sims set <нужда> N, .sims fill	.sims set <need> N, .sims fill
+.sims birth, .sims age N — роды сейчас / дети старше на N игровых дней	.sims birth, .sims age N — give birth now / kids older by N game days
+.sims time ЧЧ:ММ — перевести игровые часы, .sims daylen N — длина игровых суток в минутах	.sims time HH:MM — set the game clock, .sims daylen N — game day length in minutes
+.sims skill <навык> <уровень> — задать навык, .sims sp N — очки удовлетворения, .sims phone — телефон	.sims skill <skill> <level> — set a skill, .sims sp N — satisfaction points, .sims phone — phone
+.sims spouse — позвать супруга домой	.sims spouse — call your spouse home
+.sims life on|off|now — живые NPC	.sims life on|off|now — living NPCs
+.sims tick, .sims info, .sims debug — отладка	.sims tick, .sims info, .sims debug — debugging
+.sims npc — поставить Хранителя жизни	.sims npc — place the Life Keeper
+Имя должно быть от 2 до 20 букв.	The name must be 2 to 20 letters.
+Теперь ребёнка зовут |cffffd100	Your child's name is now |cffffd100
+|cffffd100Добро пожаловать в SimsCraft!|r У вашего героя теперь есть потребности, настроение и личная жизнь.	|cffffd100Welcome to SimsCraft!|r Your hero now has needs, a mood and a personal life.
+Откройте окно SimsCraft (|cffffd100/scui|r) или найдите |cffffd100Хранителя жизни|r. Справка: |cffffd100.sims help|r	Open the SimsCraft window (|cffffd100/scui|r) or find the |cffffd100Life Keeper|r. Help: |cffffd100.sims help|r
+Вы ушли со смены раньше времени — зарплата не начислена.	You left your shift early — no salary paid.
+[SimsCraft] ОШИБКА: база персонажей не обновлена (нет	[SimsCraft] ERROR: the characters database is not updated (missing
+). Запустите «Обновить SimsCraft». Мод выключен.	). Run "Update SimsCraft". The mod is disabled.
+[SimsCraft] стульев и скамеек в мире:	[SimsCraft] chairs and benches in the world:
+[SimsCraft] 1.0.0 загружен: предметов в каталоге	[SimsCraft] 1.0.0 loaded: catalog items
+, игровое время	, game time
+[SimsCraft] Мудлет:	[SimsCraft] Moodlet:
+Навык «	Skill "
+Стремление «	Aspiration "
+из 3 выполнен! +	of 3 complete! +
+Стремление:	Aspiration:
+Награда получена:	Reward received:
+Враг	Enemy
+Неприязнь	Dislike
+Приятель	Buddy
+Друг	Friend
+Лучший друг	Best friend
+Ваша дочь	Your daughter
+Ваш сын	Your son
+, супруги	, married
+, встречаетесь	, dating
+, бывшие	, exes
+, влюблённость	, in love
+, симпатия	, crush
+Отношения с	Relationship with
+На сегодня отношения с	Your relationship with
+уже не растут — продолжите завтра.	won't grow any more today — continue tomorrow.
+Вы рухнули от усталости и уснули прямо здесь.	You collapsed from exhaustion and fell asleep right here.
+Ой... С вами случилась неприятность. Срочно помойтесь!	Oops... You had an accident. Wash up right away!
+Эмоция:	Emotion:
+! Зарплата:	! Salary:
+. Успеваемость +	. Performance +
+Повышение! Новая должность:	Promotion! New position:
+. Премия:	. Bonus:
+Почти готово! Завершите работу у объекта перед вами.	Almost done! Finish the job at the object in front of you.
+У вас родился(ась)	You have a new
+! Имя по умолчанию:	! Default name:
+. Его можно сменить в окне семьи.	. You can change it in the family window.
+. Двигайте предмет в окне SimsCraft и нажмите «Поставить».	. Move the item in the SimsCraft window and press "Place".
+Переставлено:	Moved:
+Куплено:	Bought:
+за	for
+Поздравляем с новосельем! Теперь это ваш дом (.sims home).	Congratulations on your new home! This is your home now (.sims home).
+Это место стало вашим домом (.sims home).	This place is now your home (.sims home).
+Гардероб — сменить одежду (меняется только внешний вид)	Wardrobe — change clothes (only the look changes)
+Вы переоделись:	You changed into:
+Отмечено:	Marked:
+Обустройство дома: встаньте у мебели внутри дома и выберите, что это	Furnishing the house: stand by a piece of furniture inside the house and choose what it is
+Сломано! Предмет не работает.	Broken! The item doesn't work.
+Починено!	Repaired!
+Вас ударило током! Попробуйте ещё раз.	You got an electric shock! Try again.
+Свет отключили за неуплату. Оплатите счета (телефон в панели).	Power cut off for non-payment. Pay the bills (phone in the panel).
+Ой! Что-то сломалось. Нужен ремонт.	Oops! Something broke. It needs repair.
+Кладовая	Pantry
+Гномий терминал	Gnomish terminal
+Книга дописана! Издательство будет платить	Book finished! The publisher will pay
+Хрустальный шар — что посмотреть?	Crystal ball — what to watch?
+Сейчас	It's
+С днём рождения,	Happy birthday,
+! Теперь:	! Now:
+Малыш появится через	The baby will arrive in
+Чудесный вечер с	A wonderful evening with
+отказывает.	says no.
+Ваши дети скучают. Зайдите домой или позовите их и поиграйте с ними.	Your kids miss you. Go home or call them and play with them.
+выросла(вырос) и мечтает жить своей семьёй. Поговорите (ПКМ): отпустить или попросить остаться.	has grown up and dreams of living with their own family. Talk to them (right-click): let them go or ask them to stay.
+Сегодня праздник:	Today's holiday:
+Пришли счета за дом:	House bills have arrived:
+Свет отключили за неуплату! Компьютер, телевизор и кладовая не работают.	Power cut off for non-payment! The computer, TV and pantry don't work.
+Вы простудились. Сон в кровати и лекарство помогут быстрее (телефон → врач).	You caught a cold. Sleeping in bed and medicine will help (phone → doctor).
+Вы с	You and
+уходите в спальню...	head to the bedroom...
+Телефон	Phone
+Курьер: «Ваша пицца с сыром из Даларана!» Приятного аппетита.	Courier: "Your Dalaran cheese pizza!" Enjoy your meal.
+— этап	— stage
+Двойня!	Twins!
+, уют:	, comfort:
+Новая черта:	New trait:
+Вы приняты:	You're hired:
+, должность «	, position "
+. Уют:	. Comfort:
+. Сутки длятся	. A day lasts
+ОТКЛЮЧЕНЫ	DISABLED
+Теперь ребёнка зовут	Your child's name is now
+Добро пожаловать в SimsCraft! У вашего героя теперь есть потребности, настроение и личная жизнь.	Welcome to SimsCraft! Your hero now has needs, a mood and a personal life.
+Откройте окно SimsCraft (/scui) или найдите Хранителя жизни. Справка: .sims help	Open the SimsCraft window (/scui) or find the Life Keeper. Help: .sims help
+]==]
+TX.EN, TX.EN_KEYS, TX.EN_SL, TX.EN_EL = {}, {}, {}, {}
+for line in (TX.EN_SRC or ""):gmatch("[^\n]+") do
+    local ru, en = line:match("^(.-)\t(.*)$")
+    if ru and ru ~= "" then
+        TX.EN[ru] = en
+        TX.EN_KEYS[#TX.EN_KEYS + 1] = ru
+        local b1, b2 = ru:byte(1), ru:byte(#ru - 1)
+        TX.EN_SL[ru] = (b1 == 208 or b1 == 209) or nil
+        TX.EN_EL[ru] = (b2 == 208 or b2 == 209) or nil
+    end
+end
+TX.EN_SRC = nil
+table.sort(TX.EN_KEYS, function(a, b) return #a > #b end)
+F.LOC = {}            -- guidLow -> true, если игроку нужен английский
+F.CUR = CFG.DEFAULT_LANG ~= "ru"
+function F.isEn(player)
+    if not player or not player.GetGUIDLow then return F.CUR end
+    local g = player:GetGUIDLow()
+    local v = F.LOC[g]
+    if v == nil then
+        local ok, idx = pcall(function() return player:GetDbLocaleIndex() end)
+        if ok and type(idx) == "number" then v = idx ~= 8 else v = CFG.DEFAULT_LANG ~= "ru" end
+        F.LOC[g] = v
+    end
+    F.CUR = v
+    return v
+end
+local function cyrLetterBefore(s, a) local b1, b2 = s:byte(a - 2), s:byte(a - 1); return (b1 == 208 or b1 == 209) and b2 and b2 >= 128 and b2 <= 191 end
+local function cyrLetterAfter(s, b) local c = s:byte(b + 1); return c == 208 or c == 209 end
+function F.trText(text)
+    if not text:find("[\208\209]") then return text end
+    local w = TX.EN[text]
+    if w then return w end
+    for _, ru in ipairs(TX.EN_KEYS) do
+        local a = text:find(ru, 1, true)
+        if a then
+            local en, out, pos = TX.EN[ru], {}, 1
+            while a do
+                local b = a + #ru - 1
+                if not (TX.EN_SL[ru] and cyrLetterBefore(text, a)) and not (TX.EN_EL[ru] and cyrLetterAfter(text, b)) then
+                    out[#out + 1] = text:sub(pos, a - 1); out[#out + 1] = en; pos = b + 1
+                end
+                a = text:find(ru, b + 1, true)
+            end
+            out[#out + 1] = text:sub(pos)
+            text = table.concat(out)
+            if not text:find("[\208\209]") then break end
+        end
+    end
+    -- деньги и единицы: 5з 3с 10м → 5g 3s 10c, «2 ч» → «2 h»
+    text = text:gsub("(%d)з", "%1g"):gsub("(%d)с", "%1s"):gsub("(%d)м", "%1c"):gsub("(%d) ч", "%1 h")
+    return (text:gsub("«", "\""):gsub("»", "\""))
+end
+function F.tr(text, player)
+    if type(text) ~= "string" then return text end
+    local en
+    if player then en = F.isEn(player) else en = F.CUR end
+    if not en then return text end
+    return F.trText(text)
+end
+function F.bcast(p, text) return p:SendBroadcastMessage(F.tr(text, p)) end
+function F.area(p, text) return p:SendAreaTriggerMessage(F.tr(text, p)) end
+function F.emote(p, text, ...) return p:SendUnitEmote(F.tr(text, p), ...) end
+function F.say(u, text, ...) if u:GetTypeId() == 4 then F.isEn(u) end return u:SendUnitSay(F.tr(text), ...) end
+function F.gAdd(p, icon, text, sender, intid, code, popup, money)
+    return p:GossipMenuAddItem(icon, F.tr(text, p), sender, intid, code, popup and F.tr(popup, p) or popup, money)
+end
+SimsCraftTranslate = function(t) return F.trText(t) end   -- для проверок перевода
+function F.log(text) print(CFG.LOG_LANG == "ru" and tostring(text) or F.trText(tostring(text))) end
+
+
+local function clamp(v, lo, hi) if v < lo then return lo elseif v > hi then return hi end return v end
+local function pick(t) return t[math.random(#t)] end
+local function now() return os.time() end
+local function split(s, sep)
+    local out = {}
+    for part in (s .. sep):gmatch("(.-)" .. sep) do out[#out + 1] = part end
+    return out
+end
+local function sqlEsc(s)
+    s = tostring(s or "")
+    return (s:gsub("\\", "\\\\"):gsub("'", "''"))
+end
+local function outfitToStr(o)
+    if not o then return "" end
+    local t = {}
+    for slot, e in pairs(o) do t[#t + 1] = slot .. ":" .. e end
+    table.sort(t)
+    return table.concat(t, ",")
+end
+local function outfitFromStr(s)
+    if not s or s == "" then return nil end
+    local o = {}
+    for slot, e in tostring(s):gmatch("(%d+):(%d+)") do o[tonumber(slot)] = tonumber(e) end
+    return next(o) and o or nil
+end
+
+function F.perksStr(st) local t = {} for k in pairs(st.perks or {}) do t[#t + 1] = k end return table.concat(t, ",") end
+function F.cntStr(st) local t = {} for k, v in pairs(st.cnt or {}) do t[#t + 1] = k .. "=" .. math.floor(v) end return table.concat(t, ",") end
+function F.royaltyStr(st) local t = {} for _, r in ipairs(st.royalty or {}) do t[#t + 1] = r.per .. ":" .. r.days end return table.concat(t, ",") end
+local function msg(player, text) F.bcast(player, TAG .. text) end
+local function money(copper)
+    copper = math.floor(copper)
+    local g, s, c = math.floor(copper / 10000), math.floor((copper % 10000) / 100), copper % 100
+    local out = {}
+    if g > 0 then out[#out + 1] = g .. "з" end
+    if s > 0 then out[#out + 1] = s .. "с" end
+    if c > 0 or #out == 0 then out[#out + 1] = c .. "м" end
+    return table.concat(out, " ")
+end
+local function levelPrice(player, base)
+    return math.max(math.floor(base * 0.05), math.floor(base * player:GetLevel() / 80))
+end
+local function isBot(player)
+    if not CFG.SKIP_BOTS then return false end
+    local acc = player:GetAccountId()
+    local v = botCache[acc]
+    if v == nil then
+        v = (player:GetAccountName() or ""):upper():sub(1, #CFG.BOT_ACCOUNT_PREFIX) == CFG.BOT_ACCOUNT_PREFIX
+        botCache[acc] = v
+    end
+    return v
+end
+local function hasTrait(st, key)
+    local t = TRAIT_BY_KEY[key]
+    if not t then return false end
+    for _, id in ipairs(st.traits) do if id == t.id then return true end end
+    return false
+end
+local function add(st, need, value) st.needs[need] = clamp(st.needs[need] + value, 0, 100) end
+local function cooldown(st, key, seconds)
+    local t = st.cd[key]
+    if t and now() < t then return math.ceil(t - now()) end
+    st.cd[key] = now() + seconds
+    return nil
+end
+local function send(player, text) player:SendAddonMessage(CFG.ADDON_PREFIX, F.tr(text, player), 7, player) end
+local function dist2(x1, y1, x2, y2) local dx, dy = x1 - x2, y1 - y2; return math.sqrt(dx * dx + dy * dy) end
+local function inOpenWorld(player)
+    local map = player:GetMap()
+    return player:GetInstanceId() == 0 and not (map:IsDungeon() or map:IsRaid() or map:IsBattleground() or map:IsArena())
+end
+local function parentWord(player) return player:GetGender() == 1 and "Мама" or "Папа" end
+------------------------------------------------------------------------
+-- ИГРОВЫЕ ЧАСЫ: сутки длятся CFG.DAY_MINUTES реальных минут
+------------------------------------------------------------------------
+local SIM = { offset = 8 * 3600 }
+local setSimTime, setDayLength   -- сдвиг игрового времени (сек игровых суток); по умолчанию старт с 8:00
+local function daySeconds() return CFG.DAY_MINUTES * 60 end
+-- всего игровых секунд с «начала мира»
+local function simTotal() return (now() * 86400 / daySeconds() + SIM.offset) end
+local function simDay() return math.floor(simTotal() / 86400) end
+local function simHourF() return (simTotal() % 86400) / 3600 end
+local function localHour() return math.floor(simHourF()) end
+local function today() return simDay() end
+local function isNight() local h = simHourF(); return h >= CFG.NIGHT_HOUR or h < CFG.MORNING_HOUR end
+local function isEvening() local h = simHourF(); return h >= CFG.EVENING_HOUR and h < CFG.NIGHT_HOUR end
+local function isWorkTime() local h = simHourF(); return h >= CFG.WORK_HOURS[1] and h < CFG.WORK_HOURS[2] end
+-- реальные секунды -> игровые дни
+local function simDays(realSeconds) return realSeconds / daySeconds() end
+local function clockText()
+    local h = simHourF()
+    return string.format("%02d:%02d", math.floor(h), math.floor((h % 1) * 60))
+end
+
+-- небо клиента: SMSG_LOGIN_SETTIMESPEED (0x042) с игровым временем и скоростью
+local function sendSky(player)
+    if not CFG.SIM_SKY then return end
+    local h = simHourF()
+    local t = os.date("!*t", now())
+    local packed = math.floor((h % 1) * 60) + math.floor(h) * 64 + (t.wday - 1) * 2048 + (t.day - 1) * 16384
+        + (t.month - 1) * 1048576 + (t.year - 2000) * 16777216
+    -- скорость = игровых минут в реальную секунду (1/60 — обычное время WoW)
+    local speed = 1440 / daySeconds()
+    local pkt = CreatePacket(0x042, 12)
+    pkt:WriteULong(packed)
+    pkt:WriteFloat(speed)
+    pkt:WriteULong(0)
+    player:SendPacket(pkt)
+end
+local function sendClock(player)
+    send(player, string.format("T;%d;%.3f;%d", math.floor(simTotal() % 86400), 86400 / daySeconds(), simDay() % 7))
+end
+-- 1.0: id новых строк выдаём сами — CharDBExecute асинхронный, и «SELECT MAX(id)» сразу после него
+-- мог вернуть чужой id (из-за этого два ребёнка делили одно существо и оно мигало/пропадало)
+local NEXT_ID = {}
+function F.newId(tbl)
+    local q = CharDBQuery("SELECT COALESCE(MAX(id), 0) FROM " .. tbl)
+    local n = math.max(q and q:GetUInt32(0) or 0, NEXT_ID[tbl] or 0) + 1
+    NEXT_ID[tbl] = n
+    return n
+end
+local WORLDV = {}
+local function saveWorldValue(k, v)
+    WORLDV[k] = tostring(v)
+    CharDBExecute(string.format("REPLACE INTO character_sims_world (k, v) VALUES ('%s', '%s')", k, tostring(v)))
+end
+local function broadcastClock()
+    for _, p in ipairs(GetPlayersInWorld() or {}) do
+        if not isBot(p) then pcall(sendSky, p); pcall(sendClock, p) end
+    end
+end
+-- перевести часы: sec — секунда игровых суток
+setSimTime = function(sec)
+    local base = (now() * 86400 / daySeconds()) % 86400
+    SIM.offset = (sec - base) % 86400
+    saveWorldValue("offset", string.format("%.0f", SIM.offset))
+    broadcastClock()
+end
+setDayLength = function(minutes)
+    local sec = simTotal() % 86400
+    CFG.DAY_MINUTES = minutes
+    saveWorldValue("daylen", minutes)
+    setSimTime(sec)
+end
+local function loadWorldClock()
+    if not CharDBQuery("SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'character_sims_world' LIMIT 1") then F.log("[SimsCraft] нет таблицы character_sims_world — запустите «Обновить SimsCraft»"); return end
+    local q = CharDBQuery("SELECT k, v FROM character_sims_world")
+    if not q then return end
+    repeat
+        local k, v = q:GetString(0), tonumber(q:GetString(1))
+        if k == "offset" and v then SIM.offset = v end
+        if k == "daylen" and v and v >= 2 then CFG.DAY_MINUTES = v end
+        WORLDV[k] = q:GetString(1)
+    until not q:NextRow()
+end
+local function dbg(player, st, text) if st.gm and st.gm.debug then F.bcast(player, "|cff888888[SC debug] " .. text .. "|r") end end
+local SPOUSE_BY_LOW = {} -- guidLow созданного супруга -> { owner = guidLow, key = ключ партнёра }
+
+------------------------------------------------------------------------
+-- НАСТРОЕНИЕ И УЮТ
+------------------------------------------------------------------------
+local function comfortOf(player, st)
+    if #st.furn == 0 then return 0 end
+    local m = player:GetMapId()
+    local x, y = player:GetLocation()
+    local c = 0
+    for _, r in ipairs(st.furn) do
+        if r.map == m and dist2(x, y, r.x, r.y) <= CFG.COMFORT_RADIUS then
+            local it = ITEM_BY_ENTRY[r.entry]
+            c = c + ((it and it.cat == "house") and 5 or 1)
+        end
+    end
+    return math.min(c, 20)
+end
+
+------------------------------------------------------------------------
+-- 6.0: ЭМОЦИИ И МУДЛЕТЫ (как в Симс 4)
+------------------------------------------------------------------------
+-- порядок важен: номер эмоции уходит в аддон
+TX.EMOS = {
+    { k = "fine",          n = "Спокоен",       pos = 0 },
+    { k = "happy",         n = "Счастлив",      pos = 1 },
+    { k = "energized",     n = "Энергичен",     pos = 1 },
+    { k = "flirty",        n = "Флиртует",      pos = 1 },
+    { k = "focused",       n = "Сосредоточен",  pos = 1 },
+    { k = "inspired",      n = "Вдохновлён",    pos = 1 },
+    { k = "confident",     n = "Уверен",        pos = 1 },
+    { k = "playful",       n = "Игрив",         pos = 1 },
+    { k = "sad",           n = "Грустит",       pos = -1 },
+    { k = "angry",         n = "Зол",           pos = -1 },
+    { k = "tense",         n = "Напряжён",      pos = -1 },
+    { k = "embarrassed",   n = "Смущён",        pos = -1 },
+    { k = "uncomfortable", n = "Неуютно",       pos = -1 },
+    { k = "bored",         n = "Скучает",       pos = -1 },
+    { k = "dazed",         n = "В оцепенении",  pos = -1 },
+}
+TX.EMO_IDX = {}
+for i, e in ipairs(TX.EMOS) do TX.EMO_IDX[e.k] = i end
+
+-- мудлеты: e — эмоция, w — сила, h — сколько игровых часов длится
+TX.MOODLETS = {
+    slept      = { n = "Хорошо выспался",        e = "energized",   w = 1, h = 6 },
+    bath       = { n = "Чистота и свежесть",     e = "confident",   w = 1, h = 4 },
+    woohoo     = { n = "Романтический вечер",    e = "happy",       w = 3, h = 8 },
+    woohoo2    = { n = "Окрылён",                e = "flirty",      w = 2, h = 6 },
+    kiss       = { n = "Поцелуй",                e = "flirty",      w = 1, h = 3 },
+    insulted   = { n = "Оскорблён",              e = "angry",       w = 2, h = 4 },
+    slapped    = { n = "Получил пощёчину",       e = "angry",       w = 2, h = 4 },
+    flop       = { n = "Неудачная шутка",        e = "embarrassed", w = 1, h = 2 },
+    rejected   = { n = "Отказ",                  e = "sad",         w = 2, h = 6 },
+    breakup    = { n = "Расставание",            e = "sad",         w = 4, h = 24 },
+    married    = { n = "Свадьба!",               e = "happy",       w = 4, h = 24 },
+    baby       = { n = "Новорождённый в семье",  e = "happy",       w = 3, h = 24 },
+    shift      = { n = "Отличная смена",         e = "confident",   w = 2, h = 6 },
+    promo      = { n = "Повышение!",             e = "happy",       w = 3, h = 12 },
+    levelup    = { n = "Новое умение",           e = "confident",   w = 1, h = 4 },
+    goal       = { n = "Цель достигнута",        e = "happy",       w = 3, h = 12 },
+    meal       = { n = "Изысканное блюдо",       e = "happy",       w = 2, h = 4 },
+    coffee     = { n = "Бодрящий чай",           e = "energized",   w = 1, h = 3 },
+    read       = { n = "Хорошая книга",          e = "focused",     w = 1, h = 3 },
+    stars      = { n = "Звёздное небо",          e = "focused",     w = 1, h = 3 },
+    workout    = { n = "Прилив сил",             e = "energized",   w = 2, h = 4 },
+    paint      = { n = "Муза посетила",          e = "inspired",    w = 1, h = 3 },
+    tvcomedy   = { n = "Смешная передача",       e = "playful",     w = 1, h = 3 },
+    tvromance  = { n = "Романтический фильм",    e = "flirty",      w = 1, h = 3 },
+    tvnews     = { n = "Новости",                e = "focused",     w = 1, h = 2 },
+    tvsport    = { n = "Спортивный матч",        e = "energized",   w = 1, h = 2 },
+    drink      = { n = "Коктейль",               e = "playful",     w = 1, h = 3 },
+    party      = { n = "День рождения",          e = "happy",       w = 3, h = 8 },
+    holiday    = { n = "Праздник",               e = "happy",       w = 2, h = 24 },
+    loveday    = { n = "День любви",             e = "flirty",      w = 2, h = 24 },
+    sunny      = { n = "Солнечный денёк",        e = "happy",       w = 1, h = 3 },
+    wet        = { n = "Промок до нитки",        e = "uncomfortable", w = 1, h = 2 },
+    cold       = { n = "Холодно",                e = "uncomfortable", w = 1, h = 2 },
+    ill        = { n = "Простуда",               e = "uncomfortable", w = 2, h = 48 },
+    shock      = { n = "Удар током",             e = "dazed",       w = 2, h = 2 },
+    broke      = { n = "Свет отключили",         e = "tense",       w = 2, h = 24 },
+    gift       = { n = "Подарок",                e = "happy",       w = 1, h = 4 },
+    potion_h   = { n = "Эликсир радости",        e = "happy",       w = 3, h = 12 },
+    potion_i   = { n = "Зелье вдохновения",      e = "inspired",    w = 3, h = 12 },
+    victory    = { n = "Победа в бою",           e = "confident",   w = 1, h = 2 },
+    hugged     = { n = "Объятия",                e = "happy",       w = 1, h = 2 },
+    kidplay    = { n = "Время с детьми",         e = "happy",       w = 1, h = 4 },
+    nice_room  = { n = "Уютный дом",             e = "happy",       w = 1, h = 1 },
+    guest      = { n = "Гости в доме",           e = "happy",       w = 1, h = 3 },
+    pizza      = { n = "Горячая пицца",          e = "happy",       w = 1, h = 3 },
+    grade_bad  = { n = "Плохие оценки ребёнка",  e = "tense",       w = 1, h = 12 },
+}
+-- какая эмоция ускоряет какой навык (как в Симс)
+TX.SKILL_EMO = { cooking = "inspired", fitness = "energized", logic = "focused", charisma = "confident", painting = "inspired",
+    music = "inspired", writing = "focused", programming = "focused", handiness = "focused", gardening = "happy", fishing = "happy",
+    mixology = "playful", comedy = "playful", dancing = "playful", mischief = "playful", gaming = "focused" }
+
+function F.addMoodlet(player, st, key, mult)
+    local m = TX.MOODLETS[key]
+    if not m then return end
+    st.moodlets = st.moodlets or {}
+    local old = st.moodlets[key]
+    st.moodlets[key] = { till = now() + m.h * daySeconds() / 24 * (mult or 1) }
+    if player and not old then
+        local e = TX.EMOS[TX.EMO_IDX[m.e]]
+        F.bcast(player, string.format("|cff4fc3f7[SimsCraft]|r Мудлет: |cffffd100%s|r (%s %s%d)", m.n, e.n,
+            e.pos < 0 and "−" or "+", m.w))
+    end
+end
+function F.removeMoodlet(st, key) if st.moodlets then st.moodlets[key] = nil end end
+
+-- мудлеты от потребностей и обстановки (считаются заново каждый раз)
+function F.dynamicMoodlets(st)
+    local n, out = st.needs, {}
+    if n.hunger < 25 then out[#out + 1] = { n = n.hunger < 10 and "Умирает с голоду" or "Голоден", e = "uncomfortable", w = n.hunger < 10 and 3 or 1 } end
+    if n.energy < 25 then out[#out + 1] = { n = n.energy < 10 and "Валится с ног" or "Устал", e = "uncomfortable", w = n.energy < 10 and 3 or 1 } end
+    if n.hygiene < 25 and not hasTrait(st, "slob") then out[#out + 1] = { n = "Грязный", e = "uncomfortable", w = hasTrait(st, "neat") and 3 or 1 } end
+    if n.bladder < 25 then out[#out + 1] = { n = "Надо в туалет", e = "uncomfortable", w = n.bladder < 10 and 3 or 1 } end
+    if n.fun < 25 then out[#out + 1] = { n = "Скучно", e = "bored", w = n.fun < 10 and 3 or 1 } end
+    if n.social < 25 then out[#out + 1] = { n = "Одиноко", e = "sad", w = n.social < 10 and 3 or 1 } end
+    if (st.comfort or 0) >= 10 then out[#out + 1] = { n = "Уютный дом", e = "happy", w = (st.comfort >= 18) and 2 or 1 } end
+    local good = n.hunger >= 70 and n.energy >= 70 and n.hygiene >= 70 and n.fun >= 70 and n.social >= 70 and n.bladder >= 70
+    if good then out[#out + 1] = { n = "Всё отлично", e = "happy", w = 1 } end
+    return out
+end
+
+-- эмоция = самая сильная сумма мудлетов; уровень настроения (1..5) — для опыта и работы
+function F.emotion(st)
+    local sum, list, tnow = {}, {}, now()
+    for key, m in pairs(st.moodlets or {}) do
+        if m.till <= tnow then st.moodlets[key] = nil
+        else
+            local d = TX.MOODLETS[key]
+            sum[d.e] = (sum[d.e] or 0) + d.w
+            list[#list + 1] = { n = d.n, e = d.e, w = d.w, left = m.till - tnow }
+        end
+    end
+    for _, d in ipairs(F.dynamicMoodlets(st)) do
+        sum[d.e] = (sum[d.e] or 0) + d.w
+        list[#list + 1] = { n = d.n, e = d.e, w = d.w, left = -1 }
+    end
+    local best, bw = "fine", 0
+    for k, w in pairs(sum) do
+        if w > bw or (w == bw and TX.EMOS[TX.EMO_IDX[k]].pos < 0) then best, bw = k, w end
+    end
+    if bw < 1 then best = "fine" end
+    local intensity = bw >= 5 and 3 or (bw >= 3 and 2 or 1)
+    return best, intensity, list
+end
+
+local function computeMood(st)
+    local e, i = F.emotion(st)
+    st.emo, st.emoI = e, i
+    local pos = TX.EMOS[TX.EMO_IDX[e]].pos
+    if pos > 0 then return i >= 2 and 1 or 2 end
+    if pos < 0 then return i >= 2 and 5 or 4 end
+    return 3
+end
+
+------------------------------------------------------------------------
+-- БАЗА ДАННЫХ
+------------------------------------------------------------------------
+local function newState()
+    return {
+        needs = { hunger = 80, energy = 80, hygiene = 80, fun = 70, social = 70, bladder = 90 },
+        traits = {}, career = 0, rank = 1, perf = 0, shifts = 0,
+        home = nil, rel = {}, furn = {}, kids = {}, kidsOut = {},
+        kmode = {}, kai = {}, spots = {}, saved = {}, skills = {}, moodlets = {}, cnt = {}, perks = {}, broken = {}, royalty = {},
+        cd = {}, warn = {}, tick = 0, mood = 3, comfort = 0,
+        gm = { sleepx = 1, timex = 1, fast = false, freeze = false, debug = false },
+        walls = CFG.WALLS_DEFAULT, cam = "normal",
+    }
+end
+
+local function findPartner(st)
+    for key, r in pairs(st.rel) do
+        if r.status == "dating" or r.status == "married" then return key, r end
+    end
+end
+
+local function loadState(player)
+    local g = player:GetGUIDLow()
+    local st = newState()
+    local q = CharDBQuery("SELECT hunger, energy, hygiene, fun, social, bladder, traits, career, career_rank, career_perf, shifts, "
+        .. "home_map, home_x, home_y, home_z, home_o, preg_until, preg_partner, preg_pname, outfit, outfits, "
+        .. "asp, asp_stage, sp, perks, cnt, ill, bill, bill_due, royalty, power_off FROM character_sims WHERE guid = " .. g)
+    if q then
+        for i, k in ipairs(NEEDS) do st.needs[k] = clamp(q:GetFloat(i - 1), 0, 100) end
+        for id in tostring(q:GetString(6) or ""):gmatch("%d+") do
+            id = tonumber(id)
+            if TRAITS[id] then st.traits[#st.traits + 1] = id end
+        end
+        st.career = q:GetUInt32(7)
+        st.rank   = clamp(q:GetUInt32(8), 1, 5)
+        st.perf   = q:GetUInt32(9)
+        st.shifts = q:GetUInt32(10)
+        local hm = q:GetInt32(11)
+        if hm >= 0 then st.home = { hm, q:GetFloat(12), q:GetFloat(13), q:GetFloat(14), q:GetFloat(15) } end
+        local pu = q:GetUInt32(16)
+        if pu > 0 then st.preg = { till = pu, pkey = q:GetString(17), pname = q:GetString(18) } end
+        st.outfit = outfitFromStr(q:GetString(19))
+        local i = 0
+        for part in (tostring(q:GetString(20) or "") .. "|"):gmatch("([^|]*)|") do i = i + 1; if i <= 3 then st.saved[i] = outfitFromStr(part) end end
+        st.asp = q:GetString(21); if st.asp == "" then st.asp = nil end
+        st.aspStage, st.sp = q:GetUInt32(22), q:GetUInt32(23)
+        st.perks = {}
+        for k in tostring(q:GetString(24) or ""):gmatch("[%w_]+") do st.perks[k] = true end
+        st.cnt = {}
+        for k, v in tostring(q:GetString(25) or ""):gmatch("([%w_]+)=(%d+)") do st.cnt[k] = tonumber(v) end
+        local ill = q:GetUInt32(26); if ill > 0 then st.ill = ill end
+        local bill = q:GetUInt32(27); if bill > 0 then st.bill = { amount = bill, due = q:GetUInt32(28) } end
+        st.royalty = {}
+        for per, days in tostring(q:GetString(29) or ""):gmatch("(%d+):(%d+)") do st.royalty[#st.royalty + 1] = { per = tonumber(per), days = tonumber(days) } end
+        st.powerOff = q:GetUInt32(30) == 1 or nil
+        if not CAREERS[st.career] then st.career = 0 end
+    else
+        st.isNew = true
+    end
+
+    q = CharDBQuery("SELECT target_key, target_name, friendship, romance, status, met, since, day, gf, gr, display, gender, kind, "
+        .. "spawn, wmap, wx, wy, wz, wo FROM character_sims_relations WHERE guid = " .. g)
+    if q then
+        repeat
+            local r = { name = q:GetString(1), f = q:GetInt32(2), r = q:GetInt32(3), status = q:GetString(4) or "",
+                met = q:GetUInt32(5), since = q:GetUInt32(6), day = q:GetUInt32(7), gf = q:GetInt32(8), gr = q:GetInt32(9),
+                display = q:GetUInt32(10), gender = q:GetUInt32(11), kind = q:GetUInt32(12) }
+            if q:GetUInt32(13) > 0 then
+                r.spawn, r.wmap = q:GetUInt32(13), q:GetInt32(14)
+                r.wx, r.wy, r.wz, r.wo = q:GetFloat(15), q:GetFloat(16), q:GetFloat(17), q:GetFloat(18)
+            end
+            st.rel[q:GetString(0)] = r
+        until not q:NextRow()
+    end
+
+    q = CharDBQuery("SELECT id, entry, map, x, y, z, o, spawn, refund FROM character_sims_furniture WHERE guid = " .. g)
+    st.refund = 0
+    if q then
+        repeat
+            local refund = q:GetUInt32(8)
+            if refund > 0 or not ITEM_BY_ENTRY[q:GetUInt32(1)] then
+                st.refund = st.refund + (refund > 0 and refund or 0)
+                CharDBExecute("DELETE FROM character_sims_furniture WHERE id = " .. q:GetUInt32(0))
+            else
+                st.furn[#st.furn + 1] = { id = q:GetUInt32(0), entry = q:GetUInt32(1), map = q:GetUInt32(2),
+                    x = q:GetFloat(3), y = q:GetFloat(4), z = q:GetFloat(5), o = q:GetFloat(6), spawn = q:GetUInt32(7) }
+            end
+        until not q:NextRow()
+    end
+
+    q = CharDBQuery("SELECT skill, xp FROM character_sims_skills WHERE guid = " .. g)
+    if q then
+        repeat st.skills[q:GetString(0)] = q:GetFloat(1) until not q:NextRow()
+    end
+
+    q = CharDBQuery("SELECT id, kind, map, x, y, z, o FROM character_sims_spots WHERE guid = " .. g)
+    if q then
+        repeat
+            st.spots[#st.spots + 1] = { id = q:GetUInt32(0), kind = q:GetString(1), map = q:GetUInt32(2),
+                x = q:GetFloat(3), y = q:GetFloat(4), z = q:GetFloat(5), o = q:GetFloat(6) }
+        until not q:NextRow()
+    end
+
+    q = CharDBQuery("SELECT id, name, gender, grp, born, happy, skill, coparent_name, moved, mmap, mx, my, mz, partner, place, stay, grade "
+        .. "FROM character_sims_children WHERE guid = " .. g)
+    if q then
+        repeat
+            local k = { id = q:GetUInt32(0), name = q:GetString(1), gender = q:GetUInt32(2), grp = q:GetUInt32(3),
+                born = q:GetUInt32(4), happy = q:GetFloat(5), skill = q:GetFloat(6), coparent = q:GetString(7), cd = {} }
+            if q:GetUInt32(8) == 1 then
+                k.moved, k.mmap, k.mx, k.my, k.mz = true, q:GetInt32(9), q:GetFloat(10), q:GetFloat(11), q:GetFloat(12)
+                k.partner, k.place = q:GetString(13), q:GetString(14)
+            end
+            k.stay = q:GetUInt32(15) == 1
+            k.grade = q:GetFloat(16)
+            st.kids[#st.kids + 1] = k
+        until not q:NextRow()
+    end
+
+    st.partnerKey = findPartner(st)
+    st.mood = computeMood(st)
+    S[g] = st
+    return st
+end
+
+local function saveState(g, st)
+    local n = st.needs
+    local h = st.home or { -1, 0, 0, 0, 0 }
+    local p = st.preg or { till = 0, pkey = "", pname = "" }
+    CharDBExecute(string.format(
+        "REPLACE INTO character_sims (guid, hunger, energy, hygiene, fun, social, bladder, traits, career, career_rank, career_perf, shifts, "
+        .. "home_map, home_x, home_y, home_z, home_o, preg_until, preg_partner, preg_pname, outfit, outfits, "
+        .. "asp, asp_stage, sp, perks, cnt, ill, bill, bill_due, royalty, power_off) VALUES (%d, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, '%s', %d, %d, %d, %d, "
+        .. "%d, %.3f, %.3f, %.3f, %.3f, %d, '%s', '%s', '%s', '%s', '%s', %d, %d, '%s', '%s', %d, %d, %d, '%s', %d)",
+        g, n.hunger, n.energy, n.hygiene, n.fun, n.social, n.bladder, table.concat(st.traits, ","),
+        st.career, st.rank, st.perf, st.shifts, h[1], h[2], h[3], h[4], h[5], p.till, sqlEsc(p.pkey), sqlEsc(p.pname),
+        outfitToStr(st.outfit), outfitToStr(st.saved and st.saved[1]) .. "|" .. outfitToStr(st.saved and st.saved[2]) .. "|" .. outfitToStr(st.saved and st.saved[3]),
+        sqlEsc(st.asp or ""), st.aspStage or 0, st.sp or 0, F.perksStr(st), F.cntStr(st), st.ill or 0,
+        st.bill and st.bill.amount or 0, st.bill and st.bill.due or 0, F.royaltyStr(st), st.powerOff and 1 or 0))
+    for key in pairs(st.skillsDirty or {}) do
+        CharDBExecute(string.format("REPLACE INTO character_sims_skills (guid, skill, xp) VALUES (%d, '%s', %.2f)", g, key, st.skills[key] or 0))
+    end
+    st.skillsDirty = nil
+    for _, k in ipairs(st.kids) do
+        CharDBExecute(string.format("UPDATE character_sims_children SET happy = %.2f, skill = %.2f, name = '%s' WHERE id = %d",
+            k.happy, k.skill, sqlEsc(k.name), k.id))
+    end
+end
+
+local function saveRelation(g, key, r)
+    CharDBExecute(string.format(
+        "REPLACE INTO character_sims_relations (guid, target_key, target_name, friendship, romance, status, met, since, day, gf, gr, display, gender, kind, "
+        .. "spawn, wmap, wx, wy, wz, wo) VALUES (%d, '%s', '%s', %d, %d, '%s', %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %.3f, %.3f, %.3f, %.3f)",
+        g, sqlEsc(key), sqlEsc(r.name), r.f, r.r, sqlEsc(r.status or ""), r.met or 0, r.since or 0, r.day or 0,
+        r.gf or 0, r.gr or 0, r.display or 0, r.gender or 0, r.kind or 0,
+        r.spawn or 0, r.wmap or -1, r.wx or 0, r.wy or 0, r.wz or 0, r.wo or 0))
+end
+
+------------------------------------------------------------------------
+-- СВЯЗЬ С АДДОНОМ: HUD
+------------------------------------------------------------------------
+local function pregLeft(st)
+    if not st.preg then return -1 end
+    return math.max(0, st.preg.till - now())
+end
+
+local function sendHud(player, st)
+    local n = st.needs
+    local workLeft = st.work and math.max(0, st.work - now()) or 0
+    send(player, string.format("S;%d;%d;%d;%d;%d;%d;%d;%d;%d;%d;%d;%d;%d;%d;%s",
+        math.floor(n.hunger + 0.5), math.floor(n.energy + 0.5), math.floor(n.hygiene + 0.5),
+        math.floor(n.fun + 0.5), math.floor(n.social + 0.5), math.floor(n.bladder + 0.5),
+        st.mood, st.career, st.rank, st.perf, workLeft, st.sleeping and 1 or 0,
+        st.comfort or 0, pregLeft(st), table.concat(st.traits, ",")))
+end
+
+------------------------------------------------------------------------
+-- 6.0: НАВЫКИ
+------------------------------------------------------------------------
+TX.SKILLS = {
+    { k = "cooking", n = "Кулинария" }, { k = "fitness", n = "Фитнес" }, { k = "logic", n = "Логика" },
+    { k = "charisma", n = "Обаяние" }, { k = "painting", n = "Живопись" }, { k = "music", n = "Музыка" },
+    { k = "writing", n = "Писательство" }, { k = "programming", n = "Программирование" }, { k = "handiness", n = "Мастерство" },
+    { k = "gardening", n = "Садоводство" }, { k = "fishing", n = "Рыбалка" }, { k = "mixology", n = "Барменство" },
+    { k = "comedy", n = "Комедия" }, { k = "dancing", n = "Танцы" }, { k = "mischief", n = "Озорство" }, { k = "gaming", n = "Видеоигры" },
+}
+TX.SKILL_NAME = {}
+for i, s in ipairs(TX.SKILLS) do TX.SKILL_NAME[s.k] = s.n; s.i = i end
+TX.SKILL_XP = { 0, 100, 250, 450, 700, 1000, 1400, 1900, 2500, 3200 }   -- опыт для уровней 1..10
+
+function F.skillLevel(st, key)
+    local xp = st.skills and st.skills[key]
+    if not xp then return 0 end
+    local lvl = 0
+    for i, need in ipairs(TX.SKILL_XP) do if xp >= need then lvl = i end end
+    return lvl
+end
+function F.skillProgress(st, key)
+    local xp, lvl = st.skills[key] or 0, F.skillLevel(st, key)
+    if lvl >= 10 then return 100 end
+    local a, b = TX.SKILL_XP[lvl] or 0, TX.SKILL_XP[lvl + 1]
+    return math.floor((xp - a) / (b - a) * 100)
+end
+
+function F.sendSkills(player, st)
+    local parts = {}
+    for _, s in ipairs(TX.SKILLS) do
+        if st.skills[s.k] then parts[#parts + 1] = s.i .. ":" .. F.skillLevel(st, s.k) .. ":" .. F.skillProgress(st, s.k) end
+    end
+    -- длинную строку режем на куски по 200 символов
+    local all = table.concat(parts, ",")
+    if all == "" then return send(player, "SK;") end
+    local first = true
+    while #all > 0 do
+        local cut = #all > 200 and (all:sub(1, 200):match(".*(),") or 200) or (#all + 1)
+        send(player, (first and "SK;" or "SK+;") .. all:sub(1, cut - 1))
+        all = all:sub(cut + 1)
+        first = false
+    end
+end
+
+function F.skillGain(player, st, key, amount)
+    if not TX.SKILL_NAME[key] then return end
+    st.skills = st.skills or {}
+    local mult = 1
+    if st.emo == TX.SKILL_EMO[key] then mult = mult + 0.5 * (st.emoI or 1) end
+    if st.perks and st.perks.fastlearner then mult = mult * 1.5 end
+    if hasTrait(st, "bookworm") and (key == "writing" or key == "logic") then mult = mult * 1.25 end
+    local before = F.skillLevel(st, key)
+    st.skills[key] = (st.skills[key] or 0) + amount * mult
+    st.skillsDirty = st.skillsDirty or {}
+    st.skillsDirty[key] = true
+    local after = F.skillLevel(st, key)
+    if after > before then
+        msg(player, string.format("|cff40ff40Навык «%s»: уровень %d!|r", TX.SKILL_NAME[key], after))
+        F.area(player, TX.SKILL_NAME[key] .. ": уровень " .. after)
+        F.addMoodlet(player, st, "levelup")
+        if F.checkAspiration then F.checkAspiration(player, st) end
+    end
+    F.sendSkills(player, st)
+end
+
+function F.count(player, st, key, n)
+    st.cnt = st.cnt or {}
+    st.cnt[key] = (st.cnt[key] or 0) + (n or 1)
+    if F.checkAspiration then F.checkAspiration(player, st) end
+end
+
+------------------------------------------------------------------------
+-- 6.0: СТРЕМЛЕНИЯ И НАГРАДЫ
+------------------------------------------------------------------------
+TX.ASPS = {
+    { k = "chef",    n = "Мастер кулинарии", s = { { "skill", "cooking", 3 }, { "count", "cook", 20 }, { "skill", "cooking", 8 } } },
+    { k = "parent",  n = "Любящий родитель", s = { { "kids", 1 }, { "count", "kidplay", 30 }, { "count", "grown", 1 } } },
+    { k = "social",  n = "Душа компании",    s = { { "friends", 3 }, { "count", "social", 100 }, { "friends", 8 } } },
+    { k = "romance", n = "Романтик",         s = { { "married" }, { "count", "woohoo", 5 }, { "count", "kiss", 25 } } },
+    { k = "rich",    n = "Богатство",        s = { { "money", 1000 }, { "count", "shift", 10 }, { "money", 10000 } } },
+    { k = "artist",  n = "Творец",           s = { { "skill", "painting", 3 }, { "count", "paint", 15 }, { "skill", "music", 6 } } },
+    { k = "nerd",    n = "Учёный",           s = { { "skill", "logic", 4 }, { "skill", "programming", 4 }, { "count", "book", 3 } } },
+    { k = "fit",     n = "Атлет",            s = { { "skill", "fitness", 4 }, { "count", "workout", 30 }, { "skill", "fitness", 9 } } },
+    { k = "garden",  n = "Садовод",          s = { { "skill", "gardening", 4 }, { "count", "harvest", 40 }, { "skill", "gardening", 9 } } },
+}
+TX.ASP_BY = {}
+for i, a in ipairs(TX.ASPS) do a.i = i; TX.ASP_BY[a.k] = a end
+TX.SP_STAGE = { 500, 1000, 2000 }
+TX.REWARDS = {
+    { k = "energy",  n = "Зелье бодрости (энергия 100%)",        c = 300 },
+    { k = "food",    n = "Сытный эликсир (голод 100%)",          c = 300 },
+    { k = "happy",   n = "Эликсир радости (Счастлив +3)",        c = 500 },
+    { k = "inspire", n = "Зелье вдохновения (Вдохновлён +3)",    c = 500 },
+    { k = "cure",    n = "Лекарство (вылечить простуду)",        c = 200 },
+    { k = "fastlearner", n = "Черта «Быстрый ученик» (навыки ×1.5)", c = 2000, perk = true },
+    { k = "bladder", n = "Черта «Крепкий мочевой пузырь»",       c = 1500, perk = true },
+    { k = "sleeper", n = "Черта «Соня» (сон вдвое полезнее)",    c = 1500, perk = true },
+}
+
+function F.aspStageDone(player, st, cond)
+    local t = cond[1]
+    if t == "skill" then return F.skillLevel(st, cond[2]) >= cond[3]
+    elseif t == "count" then return ((st.cnt or {})[cond[2]] or 0) >= cond[3]
+    elseif t == "kids" then return #st.kids >= cond[2]
+    elseif t == "married" then local _, r = findPartner(st); return r and r.status == "married"
+    elseif t == "money" then return player:GetCoinage() >= cond[2] * 10000
+    elseif t == "friends" then
+        local n = 0
+        for _, r in pairs(st.rel) do if r.f >= 50 and r.status ~= "child" then n = n + 1 end end
+        return n >= cond[2]
+    end
+    return false
+end
+function F.aspText(st, cond)
+    local t = cond[1]
+    if t == "skill" then return TX.SKILL_NAME[cond[2]] .. ": уровень " .. cond[3]
+    elseif t == "count" then
+        local names = { cook = "Приготовить блюд", kidplay = "Провести время с детьми", grown = "Вырастить ребёнка",
+            social = "Пообщаться", woohoo = "Романтических вечеров", kiss = "Поцелуев", shift = "Отработать смен",
+            paint = "Нарисовать картин", book = "Написать книг", workout = "Тренировок", harvest = "Собрать урожай" }
+        return (names[cond[2]] or cond[2]) .. ": " .. ((st.cnt or {})[cond[2]] or 0) .. "/" .. cond[3]
+    elseif t == "kids" then return "Завести детей: " .. #st.kids .. "/" .. cond[2]
+    elseif t == "married" then return "Вступить в брак"
+    elseif t == "money" then return "Накопить " .. cond[2] .. " золотых"
+    elseif t == "friends" then return "Друзей (дружба 50+): " .. cond[2] end
+    return "?"
+end
+
+function F.checkAspiration(player, st)
+    local a = st.asp and TX.ASP_BY[st.asp]
+    if not a then return end
+    local stage = st.aspStage or 0
+    while stage < 3 and F.aspStageDone(player, st, a.s[stage + 1]) do
+        stage = stage + 1
+        st.sp = (st.sp or 0) + TX.SP_STAGE[stage]
+        msg(player, string.format("|cff40ff40Стремление «%s»: этап %d из 3 выполнен!|r +%d очков удовлетворения.", a.n, stage, TX.SP_STAGE[stage]))
+        F.area(player, "Стремление: этап " .. stage .. " выполнен!")
+        F.addMoodlet(player, st, "goal")
+    end
+    st.aspStage = stage
+    F.sendAsp(player, st)
+end
+
+function F.sendAsp(player, st)
+    local a = st.asp and TX.ASP_BY[st.asp]
+    local parts = {}
+    if a then
+        for i, c in ipairs(a.s) do parts[#parts + 1] = ((st.aspStage or 0) >= i and "1" or "0") .. "~" .. F.aspText(st, c) end
+    end
+    send(player, string.format("ASP;%d;%d;%d;%s", a and a.i or 0, st.aspStage or 0, st.sp or 0, table.concat(parts, "^")))
+end
+
+function F.setAspiration(player, st, key)
+    local a = TX.ASP_BY[key]
+    if not a then return end
+    if st.asp ~= key then st.asp, st.aspStage = key, 0 end
+    msg(player, "Стремление: |cffffd100" .. a.n .. "|r.")
+    F.checkAspiration(player, st)
+end
+
+function F.buyReward(player, st, key)
+    for _, r in ipairs(TX.REWARDS) do
+        if r.k == key then
+            st.perks = st.perks or {}
+            if r.perk and st.perks[key] then return msg(player, "Эта черта у вас уже есть.") end
+            if (st.sp or 0) < r.c then return msg(player, "Не хватает очков удовлетворения: нужно " .. r.c .. ".") end
+            st.sp = st.sp - r.c
+            if key == "energy" then st.needs.energy = 100
+            elseif key == "food" then st.needs.hunger = 100
+            elseif key == "happy" then F.addMoodlet(player, st, "potion_h")
+            elseif key == "inspire" then F.addMoodlet(player, st, "potion_i")
+            elseif key == "cure" then st.ill = nil; F.removeMoodlet(st, "ill")
+            else st.perks[key] = true end
+            msg(player, "Награда получена: |cffffd100" .. r.n .. "|r.")
+            player:PerformEmote(EMOTE.CHEER)
+            F.sendAsp(player, st)
+            return sendHud(player, st)
+        end
+    end
+end
+
+------------------------------------------------------------------------
+-- ОТНОШЕНИЯ
+------------------------------------------------------------------------
+TX.STATUS_NAME = { dating = "встречаетесь", married = "супруги", ex = "бывшие" }
+
+local function relTitle(r)
+    local t
+    if r.f <= -60 then t = "|cffff4040Враг|r"
+    elseif r.f <= -20 then t = "|cffff9040Неприязнь|r"
+    elseif r.f < 20 then t = "Знакомый"
+    elseif r.f < 50 then t = "|cffa0ff80Приятель|r"
+    elseif r.f < 80 then t = "|cff40ff40Друг|r"
+    else t = "|cff40ffffЛучший друг|r" end
+    if r.status == "child" then return (r.gender == 1 and "|cffff9ad5Ваша дочь|r" or "|cff8ac8ffВаш сын|r") .. ", " .. t end
+    if r.status == "married" then t = t .. ", |cffff80ffсупруги|r"
+    elseif r.status == "dating" then t = t .. ", |cffff80ffвстречаетесь|r"
+    elseif r.status == "ex" then t = t .. ", |cff999999бывшие|r"
+    elseif r.r >= 70 then t = t .. ", |cffff80ffвлюблённость|r"
+    elseif r.r >= 30 then t = t .. ", |cffff80ffсимпатия|r" end
+    return t
+end
+
+-- ключ отношений; для супруга-«двойника» дома — ключ настоящего партнёра
+local function keyOf(target)
+    if target:GetTypeId() == 4 then return "P" .. target:GetGUIDLow() end
+    local sp = SPOUSE_BY_LOW[target:GetGUIDLow()]
+    if sp then return sp.key end
+    local kid = KIDS_BY_LOW[target:GetGUIDLow()]
+    if kid then return "K" .. kid.cid end
+    local gu = F.GUEST_BY_LOW and F.GUEST_BY_LOW[target:GetGUIDLow()]
+    if gu then return gu.key end
+    return "C" .. target:GetEntry()
+end
+
+-- дети: наши и любые детские модели/имена в мире. С ними — никакой романтики.
+TX.CHILD_DISPLAYS = {}
+for _, d in ipairs({ 221, 251, 252, 257, 338, 390, 11873, 14589, 14616, 19091, 19092, 19144, 19314, 19315, 19335, 20542,
+    20545, 20546, 23783, 25173, 25384, 25383, 25394, 22674, 23818 }) do TX.CHILD_DISPLAYS[d] = true end
+TX.CHILD_NAME_PATTERNS = { "[Oo]rphan", "[Cc]hild", "[Kk]id", "[Bb]oy", "[Gg]irl", "[Cc]alf", "Сирот", "Ребён", "Ребен",
+    "Мальчик", "Девочк", "Сын", "Дочь", "Детск" }
+local function isChildUnit(t)
+    if not t or t:GetTypeId() ~= 3 then return false end
+    if KID_ENTRIES[t:GetEntry()] or KIDS_BY_LOW[t:GetGUIDLow()] then return true end
+    if TX.CHILD_DISPLAYS[t:GetDisplayId()] then return true end
+    local n = t:GetName() or ""
+    for _, pat in ipairs(TX.CHILD_NAME_PATTERNS) do if n:find(pat) then return true end end
+    return false
+end
+
+local function nameOf(st, target)
+    local sp = target:GetTypeId() == 3 and SPOUSE_BY_LOW[target:GetGUIDLow()]
+    if sp and st.rel[sp.key] then return st.rel[sp.key].name end
+    local kid = target:GetTypeId() == 3 and KIDS_BY_LOW[target:GetGUIDLow()]
+    if kid then for _, k in ipairs(st.kids) do if k.id == kid.cid then return k.name end end end
+    return target:GetName()
+end
+
+local function getRel(st, key, name)
+    local r = st.rel[key]
+    if not r then
+        r = { name = name or "?", f = 0, r = 0, status = "", met = now(), since = 0, day = 0, gf = 0, gr = 0 }
+        local cid = key:match("^K(%d+)$")
+        if cid then
+            r.f, r.status = 60, "child"
+            for _, k in ipairs(st.kids) do if k.id == tonumber(cid) then r.gender = k.gender; r.name = k.name end end
+        end
+        st.rel[key] = r
+    end
+    if name then r.name = name end
+    if not r.met or r.met == 0 then r.met = now() end
+    return r
+end
+
+-- запоминаем внешность и вид собеседника (для супруга дома)
+local function rememberLook(st, key, target)
+    local r = st.rel[key]
+    if not r or SPOUSE_BY_LOW[target:GetGUIDLow()] or KIDS_BY_LOW[target:GetGUIDLow()] or r.status == "child" then return end
+    r.display = target:GetDisplayId()
+    r.gender = target:GetGender()
+    r.kind = (target:GetTypeId() == 4) and (isBot(target) and 2 or 1) or 0
+    -- где NPC живёт и работает (место из базы мира), чтобы супруг ходил на работу и обратно
+    if r.kind == 0 and target:GetSpawnId() ~= 0 and (not r.spawn or r.spawn == 0) then
+        r.spawn, r.wmap = target:GetSpawnId(), target:GetMapId()
+        r.wx, r.wy, r.wz, r.wo = target:GetHomePosition()
+        if not r.wx then r.wx, r.wy, r.wz, r.wo = target:GetLocation() end
+    end
+end
+
+-- изменение отношений с дневным лимитом роста
+local function changeRelation(player, st, key, name, df, dr)
+    local r = getRel(st, key, name)
+    local d = today()
+    if r.day ~= d then r.day, r.gf, r.gr = d, 0, 0 end
+    local capped = false
+    if not st.gm.fast then
+        if df > 0 then
+            local left = CFG.DAILY_FRIEND - r.gf
+            if df > left then df = math.max(0, left); capped = true end
+            r.gf = r.gf + df
+        end
+        if dr > 0 then
+            local left = CFG.DAILY_ROMANCE - r.gr
+            if dr > left then dr = math.max(0, left); capped = true end
+            r.gr = r.gr + dr
+        end
+    end
+    local old = relTitle(r)
+    r.f = clamp(r.f + df, -100, 100)
+    r.r = clamp(r.r + dr, 0, 100)
+    saveRelation(player:GetGUIDLow(), key, r)
+    local new = relTitle(r)
+    if new ~= old then msg(player, "Отношения с |cffffd100" .. r.name .. "|r: " .. new) end
+    if capped then msg(player, "|cffaaaaaaНа сегодня отношения с " .. r.name .. " уже не растут — продолжите завтра.|r") end
+    return r, capped
+end
+
+local function setStatus(player, st, key, name, status)
+    local r = getRel(st, key, name)
+    r.status = status
+    r.since = now()
+    saveRelation(player:GetGUIDLow(), key, r)
+    st.partnerKey = findPartner(st)
+end
+
+-- для игрока-партнёра (живого) отражаем статус с его стороны
+local function mirrorStatus(otherGuidLow, otherName, myGuidLow, myName, status)
+    local key = "P" .. myGuidLow
+    local ost = S[otherGuidLow]
+    if ost then
+        local r = getRel(ost, key, myName)
+        r.status = status
+        r.since = now()
+        saveRelation(otherGuidLow, key, r)
+        ost.partnerKey = findPartner(ost)
+    else
+        CharDBExecute(string.format(
+            "INSERT INTO character_sims_relations (guid, target_key, target_name, friendship, romance, status, met, since, kind) "
+            .. "VALUES (%d, '%s', '%s', 50, 80, '%s', %d, %d, 1) ON DUPLICATE KEY UPDATE status = '%s', since = %d",
+            otherGuidLow, key, sqlEsc(myName), status, now(), now(), status, now()))
+    end
+end
+
+local function sendRel(player, st)
+    local t = player:GetSelection()
+    if not t or (t:GetTypeId() ~= 3 and t:GetTypeId() ~= 4) or (t:GetTypeId() == 4 and t:GetGUIDLow() == player:GetGUIDLow()) then
+        return send(player, "R;;0;0;;;0")
+    end
+    local key = keyOf(t)
+    local r = st.rel[key] or (key:match("^K%d+$") and getRel(st, key, nameOf(st, t))) or { f = 0, r = 0, status = "" }
+    local kind = (t:GetTypeId() == 4) and (isBot(t) and 2 or 1) or 0
+    local title = relTitle({ f = r.f, r = r.r, status = r.status, gender = r.gender }):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+    local gf, gr = 0, 0
+    if r.day == today() then gf, gr = r.gf or 0, r.gr or 0 end
+    send(player, string.format("R;%s;%d;%d;%s;%s;%d;%d;%d;%d;%d", nameOf(st, t), r.f, r.r, title, r.status or "", kind,
+        gf, gr, CFG.DAILY_FRIEND, CFG.DAILY_ROMANCE))
+end
+
+------------------------------------------------------------------------
+-- ЭФФЕКТЫ ПОТРЕБНОСТЕЙ
+------------------------------------------------------------------------
+local function applyEffects(player, st, inCombat)
+    local n = st.needs
+    for _, k in ipairs(NEEDS) do
+        local w = st.warn[k]
+        if n[k] < 10 and w ~= 2 then
+            st.warn[k] = 2; msg(player, "|cffff4040" .. TX.NEED_WARN[k][2] .. "|r")
+        elseif n[k] < 25 and not w then
+            st.warn[k] = 1; msg(player, "|cffffb040" .. TX.NEED_WARN[k][1] .. "|r")
+        elseif n[k] >= 35 and w then
+            st.warn[k] = nil
+        end
+    end
+    if n.hunger <= 0 and not inCombat and player:GetHealthPct() > 20 then
+        player:SetHealth(math.max(1, math.floor(player:GetHealth() - player:GetMaxHealth() * 0.05)))
+    end
+    if n.energy <= 5 then
+        if not st.slow then player:SetSpeed(1, CFG.TIRED_RUN_SPEED, true); st.slow = true end
+        if n.energy <= 0 and not inCombat and not st.sleeping and not player:IsMounted() and not player:IsFlying() then
+            player:SetStandState(3)
+            st.sleeping = "floor"
+            msg(player, "|cffff4040Вы рухнули от усталости и уснули прямо здесь.|r")
+        end
+    elseif st.slow and n.energy > 15 then
+        player:SetSpeed(1, 1.0, true); st.slow = nil
+    end
+    if n.bladder <= 0 then
+        n.bladder = 100; n.hygiene = 0
+        add(st, "fun", -25); add(st, "social", -10)
+        msg(player, "|cffff4040Ой... С вами случилась неприятность. Срочно помойтесь!|r")
+    end
+    local prevEmo = st.emo
+    st.mood = computeMood(st)
+    if st.emo ~= prevEmo then
+        local e = TX.EMOS[TX.EMO_IDX[st.emo]]
+        local xp = math.floor((MOODS[st.mood].xp - 1) * 100 + 0.5)
+        msg(player, "Эмоция: |cffffd100" .. e.n .. "|r" .. (xp == 0 and "" or string.format(" (опыт %s%d%%)", xp > 0 and "+" or "", xp)))
+    end
+end
+
+------------------------------------------------------------------------
+-- РАБОТА
+------------------------------------------------------------------------
+------------------------------------------------------------------------
+-- РАБОТА: смена — это задания рядом с вами
+------------------------------------------------------------------------
+-- mode: collect — собрать все, потом завершить у final; deliver — каждое отнести к final
+TX.JOBS = {
+    [1] = { title = "Кулинария", mode = "collect", coll = 601001, n = 4, final = 601004, radius = 14,
+        intro = "Заказ в таверну! Соберите продукты из корзин вокруг и приготовьте блюдо в котле.",
+        collVerb = "Вы набрали свежих продуктов", finalVerb = "Вы приготовили блюдо на заказ — посетители в восторге!",
+        emote = 69, items = { 2680, 3220, 3728, 12210, 34753 } },
+    [2] = { title = "Стража", mode = "collect", coll = 601003, n = 4, final = 601009, radius = 30,
+        intro = "Обход территории: пройдите по постам и зажгите сигнальные факелы, потом доложите у знамени.",
+        collVerb = "Пост проверен, факел зажжён", finalVerb = "Вы доложили капитану: всё спокойно.",
+        emote = 69, items = {} },
+    [3] = { title = "Магия", mode = "collect", coll = 601000, n = 5, final = 601006, radius = 18,
+        intro = "Добыча магических материалов: извлеките эссенцию из кристаллов и зачаруйте её в рунном круге.",
+        collVerb = "Вы извлекли магическую эссенцию", finalVerb = "Рунный круг вспыхнул: материалы зачарованы!",
+        emote = 193, items = { 10940, 11083, 11137, 11176, 22445 } },
+    [4] = { title = "Торговля", mode = "deliver", coll = 601002, n = 3, final = 601008, radius = 16,
+        intro = "Поставка товара: перенесите ящики к прилавку (по одному).",
+        collVerb = "Вы подняли ящик с товаром — несите к прилавку", finalVerb = "Товар выложен и распродан!",
+        emote = 69, items = {} },
+    [5] = { title = "Искусство", mode = "collect", coll = 601007, n = 3, final = 601005, radius = 15,
+        intro = "Уличные выступления: выступите на каждой сцене, потом соберите монеты из шляпы.",
+        collVerb = "Вы выступили — публика аплодирует", finalVerb = "Вы собрали монеты из шляпы.",
+        emote = 10, items = {} },
+}
+TX.JOBS[6] = { title = "Медицина", mode = "collect", coll = 601013, n = 4, final = 601009, radius = 15,
+    intro = "Обход больных: осмотрите и вылечите пациентов, потом доложите главному целителю у знамени.",
+    collVerb = "Пациент осмотрен и вылечен", finalVerb = "Вы сдали отчёт: все пациенты здоровы!", emote = 193, items = {} }
+TX.JOBS[7] = { title = "Спорт", mode = "collect", coll = 601012, n = 5, final = 601009, radius = 35,
+    intro = "Тренировка-забег: обегите все флажки на трассе и вернитесь к знамени.",
+    collVerb = "Флажок взят", finalVerb = "Финиш! Отличное время.", emote = 0, items = {}, skill = "fitness" }
+TX.JOBS[1].skill, TX.JOBS[3].skill, TX.JOBS[4].skill, TX.JOBS[5].skill, TX.JOBS[2].skill = "cooking", "logic", "charisma", "music", "fitness"
+local JOB_ENTRY = {}
+for _, j in pairs(TX.JOBS) do JOB_ENTRY[j.coll] = true; JOB_ENTRY[j.final] = true end
+local JOB_OWNER = {}   -- guidLow объекта -> guidLow игрока
+
+function F.jobSpawn(player, st, entry, x, y, z, o)
+    local go = PerformIngameSpawn(2, entry, player:GetMapId(), 0, x, y, z, o, false)
+    if not go then return end
+    st.job.objs[#st.job.objs + 1] = go:GetGUID()
+    JOB_OWNER[go:GetGUIDLow()] = player:GetGUIDLow()
+    return go
+end
+
+function F.jobClear(player, st)
+    local j = st.job
+    st.job = nil
+    if not j then return end
+    local map = player:GetMap()
+    for _, g in ipairs(j.objs) do
+        local o = map:GetWorldObject(g)
+        if o then JOB_OWNER[o:GetGUIDLow()] = nil; o:RemoveFromWorld(false) end
+    end
+end
+
+local function finishShift(player, st, progress)
+    progress = progress or 1
+    F.jobClear(player, st)
+    st.work = nil
+    local c = CAREERS[st.career]
+    if not c then return end
+    local perfGain = math.floor(({ 20, 14, 10, 6, 3 })[st.mood] * (0.3 + 0.7 * progress) * (progress >= 1 and 1.5 or 1))
+    if hasTrait(st, "lazy") then perfGain = math.floor(perfGain * 0.75) end
+    local pay = TX.CAREER_PAY[st.rank] * player:GetLevel() * CFG.PAY_MULT * (0.3 + 0.7 * progress)
+    if hasTrait(st, "workaholic") then pay = pay * 1.25 end
+    if st.mood == 1 then pay = pay * 1.2 elseif st.mood == 5 then pay = pay * 0.7 end
+    pay = math.floor(pay)
+    player:ModifyMoney(pay)
+    st.shifts = st.shifts + 1
+    st.perf = st.perf + perfGain
+    F.count(player, st, "shift")
+    if progress >= 1 then F.addMoodlet(player, st, "shift") end
+    local job = TX.JOBS[st.career]
+    if progress >= 1 and job and #job.items > 0 then
+        local item = job.items[st.rank] or job.items[#job.items]
+        local cnt = math.random(1, 2) + math.floor(st.rank / 2)
+        if player:AddItem(item, cnt) then msg(player, "Вы получили материалы за работу (×" .. cnt .. ").") end
+    end
+    msg(player, string.format("Смена окончена%s! Зарплата: |cffffd100%s|r. Успеваемость +%d%% (%d%%).",
+        progress >= 1 and ", все задания выполнены" or (" (выполнено " .. math.floor(progress * 100) .. "%%)"),
+        money(pay), perfGain, math.min(st.perf, 100)))
+    if st.perf >= 100 then
+        if st.rank < 5 then
+            st.rank = st.rank + 1; st.perf = 0
+            player:ModifyMoney(pay * 3)
+            msg(player, "|cff40ff40Повышение!|r Новая должность: |cffffd100" .. c.ranks[st.rank] .. "|r. Премия: " .. money(pay * 3))
+            F.addMoodlet(player, st, "promo")
+            F.area(player, "Повышение: " .. c.ranks[st.rank] .. "!")
+        else
+            st.perf = 100
+        end
+    end
+    saveState(player:GetGUIDLow(), st)
+end
+
+local function startShift(player, st)
+    if st.work then return msg(player, "Вы уже на смене.") end
+    if not CAREERS[st.career] then return msg(player, "У вас нет работы. Выберите карьеру у Хранителя жизни.") end
+    if player:IsInCombat() then return msg(player, "Сначала закончите бой.") end
+    if not inOpenWorld(player) then return msg(player, "Работать можно только в открытом мире.") end
+    if st.needs.energy < 25 then return msg(player, "Вы слишком устали для работы. Поспите.") end
+    if st.needs.hunger < 20 then return msg(player, "На голодный желудок не работают. Поешьте.") end
+    local job = TX.JOBS[st.career]
+    st.work = now() + CFG.SHIFT_SECONDS
+    st.job = { objs = {}, left = job.n, total = job.n, carry = false }
+    local x, y, z = player:GetLocation()
+    for i = 1, job.n do
+        local ang = (i / job.n) * 2 * math.pi + math.random() * 0.8
+        local d = job.radius * (0.45 + math.random() * 0.55)
+        F.jobSpawn(player, st, job.coll, x + math.cos(ang) * d, y + math.sin(ang) * d, z, ang)
+    end
+    if job.mode == "deliver" then
+        local o = select(4, player:GetLocation())
+        F.jobSpawn(player, st, job.final, x + math.cos(o) * 3, y + math.sin(o) * 3, z, o + math.pi)
+    end
+    msg(player, "|cffffd100" .. job.title .. ":|r " .. job.intro .. " На смену " .. math.floor(CFG.SHIFT_SECONDS / 60) .. " мин.")
+    F.area(player, job.intro)
+end
+
+local function onJobObject(event, player, go)
+    player:GossipComplete()
+    local st = S[player:GetGUIDLow()]
+    local owner = JOB_OWNER[go:GetGUIDLow()]
+    if not st or owner ~= player:GetGUIDLow() or not st.job then
+        msg(player, "Это чужая работа.")
+        return true
+    end
+    local job = TX.JOBS[st.career]
+    if not job then return true end
+    local j = st.job
+    local entry = go:GetEntry()
+    if j.busy and now() < j.busy then return true end
+    if entry == job.coll then
+        if job.mode == "deliver" and j.carry then msg(player, "Сначала отнесите ящик, который у вас в руках."); return true end
+        j.busy = now() + 3
+        player:SetRooted(true)
+        player:SetFacingToObject(go)
+        player:EmoteState(job.emote)
+        if st.career == 5 then
+            for _, c in ipairs(player:GetCreaturesInRange(20, 0, 2, 1) or {}) do
+                if c:GetCreatureType() == 7 and math.random() < 0.5 then c:PerformEmote(EMOTE.CHEER) end
+            end
+        end
+        local g = go:GetGUID()
+        player:RegisterEvent(function(_, _, _, p)
+            p:SetRooted(false); p:EmoteState(0)
+            local s2 = S[p:GetGUIDLow()]
+            local o = p:GetMap():GetWorldObject(g)
+            if not s2 or not s2.job or not o then return end
+            JOB_OWNER[o:GetGUIDLow()] = nil
+            o:RemoveFromWorld(false)
+            add(s2, "fun", 2)
+            if job.skill then F.skillGain(p, s2, job.skill, 12) end
+            if job.mode == "deliver" then
+                s2.job.carry = true
+                msg(p, job.collVerb .. ".")
+            else
+                s2.job.left = s2.job.left - 1
+                msg(p, string.format("%s (%d/%d).", job.collVerb, s2.job.total - s2.job.left, s2.job.total))
+                if s2.job.left <= 0 then
+                    local x, y, z, ori = p:GetLocation()
+                    F.jobSpawn(p, s2, job.final, x + math.cos(ori) * 3, y + math.sin(ori) * 3, z, ori + math.pi)
+                    msg(p, "|cff40ff40Почти готово!|r Завершите работу у объекта перед вами.")
+                end
+            end
+            sendHud(p, s2)
+        end, 3000, 1)
+    elseif entry == job.final then
+        if job.mode == "deliver" then
+            if not j.carry then msg(player, "Сначала принесите ящик."); return true end
+            j.carry = false
+            j.left = j.left - 1
+            player:PerformEmote(EMOTE.CHEER)
+            msg(player, string.format("%s (%d/%d)", job.finalVerb, j.total - j.left, j.total))
+            if j.left <= 0 then finishShift(player, st, 1) end
+        elseif j.left <= 0 then
+            player:PerformEmote(EMOTE.CHEER)
+            msg(player, job.finalVerb)
+            finishShift(player, st, 1)
+        else
+            msg(player, "Сначала выполните все задания (осталось " .. j.left .. ").")
+        end
+        sendHud(player, st)
+    end
+    return true
+end
+
+------------------------------------------------------------------------
+-- ДЕТИ
+------------------------------------------------------------------------
+local function kidStage(k)
+    local d = simDays(now() - k.born)
+    local s = 1
+    for i, lim in ipairs(CFG.KID_STAGE_DAYS) do if d >= lim then s = i + 1 end end
+    return s
+end
+
+local function kidByCreature(creature)
+    local info = KIDS_BY_LOW[creature:GetGUIDLow()]
+    if not info then return end
+    local st = S[info.owner]
+    if not st then return end
+    for _, k in ipairs(st.kids) do if k.id == info.cid then return k, st, info end end
+end
+
+function F.kidRace(k)
+    if (k.grp or 0) >= 100 then return k.grp - 100 end
+    return TX.GRP_RACE[k.grp] or 1
+end
+function F.adultDisplay(race, gender)
+    local t = TX.ADULT_RACE[race] or TX.ADULT_RACE[1]
+    return t[gender == 1 and 2 or 1]
+end
+local function kidEntry(k)
+    local g = TX.KID_MODEL_GRP[F.kidRace(k)] or 1
+    return KID_ENTRY[g * 2 + k.gender - 2] or 190110
+end
+
+-- внешность по возрасту: малыши маленькие, взрослые дети — модели горожан своей расы
+local function applyKidLook(c, k)
+    local stg = kidStage(k)
+    local race = F.kidRace(k)
+    local want, scale
+    if stg >= 5 then
+        want, scale = F.adultDisplay(race, k.gender), 1.0
+    elseif TX.KID_MODEL_GRP[race] then
+        want, scale = TX.KID_NATIVE[c:GetEntry()], TX.KID_SCALE[stg]
+    else
+        want, scale = F.adultDisplay(race, k.gender), math.min(1, TX.MINI_SCALE[stg] * (TX.MINI_RACE_MULT[race] or 1))
+    end
+    if want and c:GetDisplayId() ~= want then c:SetDisplayId(want) end
+    c:SetScale(scale)
+    return stg
+end
+
+local function kidObj(player, st, k)
+    local guid = st.kidsOut[k.id]
+    if not guid then return nil end
+    local c = player:GetMap():GetWorldObject(guid)
+    if not c then st.kidsOut[k.id] = nil; st.kmode[k.id] = nil; st.kai[k.id] = nil end
+    return c
+end
+
+local function kidSay(c, k, line) F.say(c, k.name .. ": " .. line, 0) end
+
+local function despawnKid(player, st, k)
+    local c = kidObj(player, st, k)
+    st.kidsOut[k.id] = nil; st.kmode[k.id] = nil; st.kai[k.id] = nil
+    if c then
+        KIDS_BY_LOW[c:GetGUIDLow()] = nil
+        c:DespawnOrUnsummon(0)
+    end
+end
+
+local function despawnAllKids(player, st)
+    for _, k in ipairs(st.kids) do despawnKid(player, st, k) end
+    for id, g in pairs(st.kpart or {}) do
+        local c = player:GetMap():GetWorldObject(g)
+        if c then c:DespawnOrUnsummon(0) end
+        st.kpart[id] = nil
+    end
+end
+
+local function spawnKid(player, st, k, x, y, z, o, mode)
+    local c = player:SpawnCreature(kidEntry(k), x, y, z, o, 3, CFG.KID_DESPAWN_MS)
+    if not c then return nil end
+    applyKidLook(c, k)
+    st.kidsOut[k.id] = c:GetGUID()
+    st.kmode[k.id] = mode
+    st.kai[k.id] = { till = now() + math.random(2, 6) }
+    KIDS_BY_LOW[c:GetGUIDLow()] = { owner = player:GetGUIDLow(), cid = k.id }
+    return c
+end
+
+-- рядом ли игрок с домом; возвращает (рядом, расстояние)
+local function nearHome(player, st, radius)
+    if not st.home or st.home[1] ~= player:GetMapId() or not inOpenWorld(player) then return false, 1e9 end
+    local x, y = player:GetLocation()
+    local d = dist2(x, y, st.home[2], st.home[3])
+    return d <= radius, d
+end
+
+local function walkTo(c, x, y, z)
+    c:MoveTo(math.random(1, 100000), x, y, z)
+end
+
+local function callKids(player, st)
+    if #st.kids == 0 then return msg(player, "У вас пока нет детей.") end
+    if not inOpenWorld(player) then return msg(player, "Детей можно позвать только в открытом мире.") end
+    local x, y, z, o = player:GetLocation()
+    local n = 0
+    for _, k in ipairs(st.kids) do
+        if n >= CFG.KIDS_FOLLOW_MAX then break end
+        if k.moved then goto nextkid end
+        local c = kidObj(player, st, k)
+        if not c then
+            local ang = o + math.pi + (n - 1.5) * 0.6
+            c = spawnKid(player, st, k, x + math.cos(ang) * 2, y + math.sin(ang) * 2, z, o, "follow")
+        end
+        if c then
+            local a = st.kai[k.id]
+            if a then a.pending, a.sleeping, a.till = nil, nil, 0 end
+            c:SetStandState(0); c:EmoteState(0)
+            st.kmode[k.id] = "follow"
+            c:MoveFollow(player, 1.5 + n * 0.8, math.pi * (0.6 + n * 0.25))
+            if math.random() < 0.5 then kidSay(c, k, pick({ "Иду!", "Бегу-бегу!", "Куда идём?", "Ура, гулять!" })) end
+            n = n + 1
+        end
+        ::nextkid::
+    end
+    msg(player, n > 0 and "Дети прибежали к вам!" or "Не получилось позвать детей.")
+end
+
+-- отправить ребёнка домой: рядом с домом — идёт в дом и играет там, далеко — уходит пешком
+local function sendKidHome(player, st, k)
+    local c = kidObj(player, st, k)
+    if not c then return end
+    local home = nearHome(player, st, CFG.SPOUSE_RADIUS)
+    local a = st.kai[k.id] or {}
+    st.kai[k.id] = a
+    a.pending, a.sleeping = nil, nil
+    if home then
+        st.kmode[k.id] = "home"
+        local ang = math.random() * 2 * math.pi
+        walkTo(c, st.home[2] + math.cos(ang) * 3, st.home[3] + math.sin(ang) * 3, st.home[4])
+        a.till = now() + 8
+        kidSay(c, k, pick({ "Бегу домой!", "Я буду играть дома!", "Хорошо!" }))
+    else
+        st.kmode[k.id] = "leave"
+        local px, py = player:GetLocation()
+        local cx, cy, cz = c:GetLocation()
+        local ang = atan2(cy - py, cx - px)
+        walkTo(c, cx + math.cos(ang) * 20, cy + math.sin(ang) * 20, cz)
+        a.till = now() + 7
+        kidSay(c, k, pick({ "Пока! Я домой!", "До вечера!", "Увидимся дома!" }))
+    end
+end
+
+local function sendKidsHome(player, st)
+    local n = 0
+    for _, k in ipairs(st.kids) do
+        if st.kmode[k.id] == "follow" then sendKidHome(player, st, k); n = n + 1 end
+    end
+    msg(player, n > 0 and "Дети пошли домой." or "С вами сейчас нет детей.")
+end
+
+local function sendFamily(player, st)
+    local pk, pr = findPartner(st)
+    send(player, "FP;" .. (pr and pr.name or "") .. ";" .. (pr and pr.status or "") .. ";" .. pregLeft(st))
+    for _, k in ipairs(st.kids) do
+        local stg = kidStage(k)
+        send(player, string.format("FK;%d;%s;%d;%d;%d;%d;%d", k.id, k.name, k.gender, stg,
+            math.floor(k.happy + 0.5), math.floor(k.skill + 0.5), k.moved and 3 or (st.kidsOut[k.id] and (st.kmode[k.id] == "home" and 2 or 1) or 0)) .. ";" .. (k.moved and (k.place or "") or "")
+            .. ";" .. ((stg == 3 or stg == 4) and F.gradeLetter(k.grade) or ""))
+    end
+    send(player, "FE")
+end
+
+local function addChild(guidLow, name, gender, grp, coparent)
+    local id = F.newId("character_sims_children")
+    CharDBExecute(string.format(
+        "INSERT INTO character_sims_children (id, guid, name, gender, grp, born, happy, skill, coparent_name) VALUES (%d, %d, '%s', %d, %d, %d, 80, 0, '%s')",
+        id, guidLow, sqlEsc(name), gender, grp, now(), sqlEsc(coparent)))
+    return id
+end
+-- раса второго родителя: игрок — из базы; NPC — то, что аддон узнал по модели (TRACE)
+function F.partnerRace(pkey)
+    local pl = tostring(pkey or ""):match("^P(%d+)$")
+    if pl then
+        local q = CharDBQuery("SELECT race FROM characters WHERE guid = " .. pl)
+        return q and q:GetUInt32(0) or nil
+    end
+    return tonumber(WORLDV["race:" .. tostring(pkey or "")] or "")
+end
+
+local function birth(player, st)
+    local p = st.preg
+    st.preg = nil
+    local gender = math.random(0, 1)
+    local myRace, otherRace = player:GetRace(), F.partnerRace(p.pkey)
+    local race = (otherRace and TX.ADULT_RACE[otherRace] and math.random() < 0.5) and otherRace or myRace
+    local grp = 100 + race
+    local name = pick(TX.NAMES[gender])
+    local id = addChild(player:GetGUIDLow(), name, gender, grp, p.pname or "")
+    -- живой партнёр тоже получает ребёнка
+    local pl = tostring(p.pkey or ""):match("^P(%d+)$")
+    local id2 = pl and addChild(tonumber(pl), name, gender, grp, player:GetName())
+    st.kids[#st.kids + 1] = { id = id, name = name, gender = gender, grp = grp, born = now(), happy = 80, skill = 0, coparent = p.pname or "", cd = {} }
+    if pl then
+        local ost = S[tonumber(pl)]
+        if ost then
+            ost.kids[#ost.kids + 1] = { id = id2, name = name, gender = gender, grp = grp, born = now(), happy = 80, skill = 0, coparent = player:GetName(), cd = {} }
+        end
+    end
+    local word = gender == 0 and "сын" or "дочь"
+    msg(player, "|cffff80ffУ вас родился(ась) " .. word .. "!|r Имя по умолчанию: |cffffd100" .. name .. "|r. Его можно сменить в окне семьи.")
+    F.area(player, "Поздравляем! У вас " .. word .. "!")
+    player:PerformEmote(EMOTE.CHEER)
+    send(player, string.format("NAME;%d;%d;%s", id, gender, name))
+    saveState(player:GetGUIDLow(), st)
+end
+
+------------------------------------------------------------------------
+-- РАССТАНОВКА («ПРИЗРАК»)
+------------------------------------------------------------------------
+local function removePreview(player, st)
+    local pl = st.pl
+    if pl and pl.guid then
+        local go = player:GetMap():GetWorldObject(pl.guid)
+        if go then go:RemoveFromWorld(false) end
+        pl.guid = nil
+    end
+end
+
+local function spawnPreview(player, st)
+    local pl = st.pl
+    removePreview(player, st)
+    local go = PerformIngameSpawn(2, pl.item.entry, player:GetMapId(), 0, pl.x, pl.y, pl.z, pl.o, false)
+    if go then pl.guid = go:GetGUID() end
+    send(player, string.format("P;%s;%.1f;%.1f;%.1f;%d;%d;%d", pl.item.name, pl.x, pl.y, pl.z,
+        math.floor(math.deg(pl.o) % 360 + 0.5), pl.move and 0 or levelPrice(player, pl.item.price), pl.move and 1 or 0))
+end
+
+local function startPlacement(player, st, item, move)
+    if not inOpenWorld(player) then return msg(player, "Строить и ставить мебель можно только в открытом мире.") end
+    if player:IsInCombat() then return msg(player, "Сначала закончите бой.") end
+    if st.pl then removePreview(player, st); if st.pl.move then -- отменяем прошлую перестановку
+            local m = st.pl.move
+            local go = PerformIngameSpawn(2, m.entry, m.map, 0, m.x, m.y, m.z, m.o, true)
+            if go then m.spawn = go:GetSpawnId() end
+            CharDBExecute(string.format("UPDATE character_sims_furniture SET spawn = %d WHERE id = %d", m.spawn or 0, m.id))
+        end
+    end
+    if not move then
+        if #st.furn >= CFG.MAX_OBJECTS then return msg(player, "Слишком много предметов (максимум " .. CFG.MAX_OBJECTS .. "). Продайте что-нибудь.") end
+        if player:GetCoinage() < levelPrice(player, item.price) then
+            return msg(player, "Не хватает денег: нужно " .. money(levelPrice(player, item.price)) .. ".")
+        end
+    end
+    local x, y, z, o = player:GetLocation()
+    local d = item.dist or 2.5
+    st.pl = { item = item, move = move,
+        x = move and move.x or x + math.cos(o) * d,
+        y = move and move.y or y + math.sin(o) * d,
+        z = move and move.z or z,
+        o = move and move.o or (o + math.pi) % (2 * math.pi) }
+    spawnPreview(player, st)
+    msg(player, (move and "Перестановка: " or "Расстановка: ") .. "|cffffd100" .. item.name .. "|r. Двигайте предмет в окне SimsCraft и нажмите «Поставить».")
+end
+
+local function nudge(player, st, dir, step)
+    local pl = st.pl
+    if not pl then return end
+    step = clamp(tonumber(step) or 1, 0.05, 25)
+    local _, _, pz, po = player:GetLocation()
+    if dir == "f" then pl.x = pl.x + math.cos(po) * step; pl.y = pl.y + math.sin(po) * step
+    elseif dir == "b" then pl.x = pl.x - math.cos(po) * step; pl.y = pl.y - math.sin(po) * step
+    elseif dir == "l" then pl.x = pl.x + math.cos(po + math.pi / 2) * step; pl.y = pl.y + math.sin(po + math.pi / 2) * step
+    elseif dir == "r" then pl.x = pl.x + math.cos(po - math.pi / 2) * step; pl.y = pl.y + math.sin(po - math.pi / 2) * step
+    elseif dir == "u" then pl.z = pl.z + step
+    elseif dir == "d" then pl.z = pl.z - step
+    elseif dir == "rl" then pl.o = (pl.o + math.rad(step * 15)) % (2 * math.pi)
+    elseif dir == "rr" then pl.o = (pl.o - math.rad(step * 15)) % (2 * math.pi)
+    elseif dir == "here" then local x, y, z = player:GetLocation(); pl.x, pl.y, pl.z = x, y, z
+    elseif dir == "front" then local x, y, z, o = player:GetLocation(); local d = pl.item.dist or 2.5
+        pl.x, pl.y, pl.z = x + math.cos(o) * d, y + math.sin(o) * d, z
+    elseif dir == "face" then local x, y = player:GetLocation(); pl.o = atan2(y - pl.y, x - pl.x) % (2 * math.pi)
+    end
+    local px, py = player:GetLocation()
+    if dist2(px, py, pl.x, pl.y) > 60 then
+        msg(player, "Слишком далеко от вас. Подойдите ближе.")
+        local x, y, z = player:GetLocation(); pl.x, pl.y, pl.z = x, y, z
+    end
+    if math.abs(pl.z - pz) > 40 then pl.z = pz end
+    spawnPreview(player, st)
+end
+
+local function finishPlacement(player, st, ok)
+    local pl = st.pl
+    if not pl then return end
+    removePreview(player, st)
+    st.pl = nil
+    local item, g = pl.item, player:GetGUIDLow()
+    local m = pl.move
+    if not ok then
+        if m then
+            local go = PerformIngameSpawn(2, m.entry, m.map, 0, m.x, m.y, m.z, m.o, true)
+            m.spawn = go and go:GetSpawnId() or 0
+            CharDBExecute(string.format("UPDATE character_sims_furniture SET spawn = %d WHERE id = %d", m.spawn, m.id))
+        end
+        send(player, "PX")
+        return msg(player, "Отменено.")
+    end
+    if not m then
+        local price = levelPrice(player, item.price)
+        if player:GetCoinage() < price then send(player, "PX"); return msg(player, "Не хватает денег.") end
+        player:ModifyMoney(-price)
+    end
+    local go = PerformIngameSpawn(2, item.entry, player:GetMapId(), 0, pl.x, pl.y, pl.z, pl.o, true)
+    if not go then send(player, "PX"); return msg(player, "Не удалось поставить предмет здесь.") end
+    local spawn = go:GetSpawnId()
+    if m then
+        m.x, m.y, m.z, m.o, m.spawn, m.map = pl.x, pl.y, pl.z, pl.o, spawn, player:GetMapId()
+        CharDBExecute(string.format("UPDATE character_sims_furniture SET map = %d, x = %.3f, y = %.3f, z = %.3f, o = %.3f, spawn = %d WHERE id = %d",
+            m.map, m.x, m.y, m.z, m.o, spawn, m.id))
+        msg(player, "Переставлено: |cffffd100" .. item.name .. "|r.")
+    else
+        local fid = F.newId("character_sims_furniture")
+        CharDBExecute(string.format("INSERT INTO character_sims_furniture (id, guid, entry, map, x, y, z, o, spawn, item) VALUES (%d, %d, %d, %d, %.3f, %.3f, %.3f, %.3f, %d, '%s')",
+            fid, g, item.entry, player:GetMapId(), pl.x, pl.y, pl.z, pl.o, spawn, item.id))
+        st.furn[#st.furn + 1] = { id = fid, entry = item.entry, map = player:GetMapId(),
+            x = pl.x, y = pl.y, z = pl.z, o = pl.o, spawn = spawn }
+        msg(player, "Куплено: |cffffd100" .. item.name .. "|r за " .. money(levelPrice(player, item.price)) .. ".")
+        if item.cat == "house" or not st.home then
+            local x, y, z, o = player:GetLocation()
+            st.home = { player:GetMapId(), x, y, z, o }
+            msg(player, item.cat == "house" and "Поздравляем с новосельем! Теперь это ваш дом (|cffffd100.sims home|r)."
+                or "Это место стало вашим домом (|cffffd100.sims home|r).")
+        end
+    end
+    send(player, "PX")
+    saveState(g, st)
+end
+
+-- найти свой предмет рядом
+local function nearestOwn(player, st)
+    local x, y = player:GetLocation()
+    local best, bd, bi
+    for i, r in ipairs(st.furn) do
+        if r.map == player:GetMapId() then
+            local it = ITEM_BY_ENTRY[r.entry]
+            local lim = (it and it.cat == "house") and CFG.HOUSE_MOVE_RADIUS or CFG.MOVE_RADIUS
+            local d = dist2(x, y, r.x, r.y)
+            if d <= lim and (not bd or d < bd) then best, bd, bi = r, d, i end
+        end
+    end
+    return best, bi
+end
+
+local function findWorldObject(player, r)
+    local list = player:GetGameObjectsInRange(CFG.HOUSE_MOVE_RADIUS + 10, r.entry) or {}
+    local best, bd
+    for _, go in ipairs(list) do
+        if r.spawn and r.spawn > 0 and go:GetSpawnId() == r.spawn then return go end
+        local gx, gy = go:GetLocation()
+        local d = dist2(gx, gy, r.x, r.y)
+        if d < 1.5 and (not bd or d < bd) then best, bd = go, d end
+    end
+    return best
+end
+
+local showAllHousesRef
+local function moveNearest(player, st)
+    if showAllHousesRef then showAllHousesRef(player, st) end
+    local r = nearestOwn(player, st)
+    if not r then return msg(player, "Рядом нет ваших предметов.") end
+    local item = ITEM_BY_ENTRY[r.entry]
+    if not item then return msg(player, "Этот предмет нельзя переставить.") end
+    if player:IsInCombat() then return msg(player, "Сначала закончите бой.") end
+    if st.pl then finishPlacement(player, st, false) end
+    local go = findWorldObject(player, r)
+    if go then go:RemoveFromWorld(true) end
+    startPlacement(player, st, item, r)
+end
+
+local function sellNearest(player, st)
+    if showAllHousesRef then showAllHousesRef(player, st) end
+    local r, i = nearestOwn(player, st)
+    if not r then return msg(player, "Рядом нет ваших предметов.") end
+    local item = ITEM_BY_ENTRY[r.entry]
+    local go = findWorldObject(player, r)
+    if go then go:RemoveFromWorld(true) end
+    CharDBExecute("DELETE FROM character_sims_furniture WHERE id = " .. r.id)
+    table.remove(st.furn, i)
+    local refund = item and math.floor(levelPrice(player, item.price) * CFG.SELL_REFUND) or 0
+    player:ModifyMoney(refund)
+    msg(player, "Продано: " .. (item and item.name or "предмет") .. ". Возвращено " .. money(refund) .. ".")
+end
+
+local function sendCatalog(player)
+    for _, c in ipairs(CATEGORIES) do send(player, "CC;" .. c.key .. ";" .. c.name) end
+    for i, it in ipairs(CATALOG) do
+        send(player, string.format("C;%d;%s;%d;%s;%s", i, it.cat, levelPrice(player, it.price), it.name, it.kind or ""))
+    end
+    send(player, "CE;" .. #CATALOG)
+end
+
+------------------------------------------------------------------------
+-- ДЕЙСТВИЯ С МЕБЕЛЬЮ
+------------------------------------------------------------------------
+local function rootFor(player, seconds)
+    player:SetRooted(true)
+    player:RegisterEvent(function(_, _, _, p) p:SetRooted(false) end, seconds * 1000, 1)
+end
+
+local setUndressed
+-- ванна: снимаем видимую одежду (остаётся бельё), потом возвращаем как было
+TX.BATH_SLOTS = { 0, 2, 3, 4, 5, 6, 7, 8, 9, 14, 15, 16, 17, 18 }
+local VISIBLE_ITEM_FIELD = 283   -- PLAYER_VISIBLE_ITEM_1_ENTRYID (3.3.5a), шаг 2 на слот
+setUndressed = function(player, on)
+    for _, slot in ipairs(TX.BATH_SLOTS) do
+        local v = 0
+        if not on then
+            local s2 = S[player:GetGUIDLow()]
+            if s2 and s2.outfit then v = s2.outfit[slot] or 0
+            else
+                local it = player:GetEquippedItemBySlot(slot)
+                v = it and it:GetEntry() or 0
+            end
+        end
+        player:SetUInt32Value(VISIBLE_ITEM_FIELD + slot * 2, v)
+    end
+end
+
+local FURN_ACTION = {
+    bed = function(player, st, go)
+        if player:IsInCombat() then return msg(player, "Не до сна — вы в бою!") end
+        local gx, gy, gz, go_o = go:GetLocation()
+        player:NearTeleport(gx, gy, gz + 0.6, go_o)
+        player:SetStandState(3)
+        st.sleeping = "bed"
+        msg(player, "Вы забрались в кровать. Сладких снов! (подвигайтесь, чтобы встать)")
+    end,
+    stove = function(player, st)
+        local cd = cooldown(st, "stove", 90)
+        if cd then return msg(player, "Плита ещё горячая. Подождите " .. cd .. " сек.") end
+        add(st, "hunger", 45 * (hasTrait(st, "glutton") and 1.5 or 1)); add(st, "fun", 3)
+        rootFor(player, 3)
+        msg(player, "Вы приготовили и съели " .. pick(TX.DISHES) .. ". Вкуснотища!")
+    end,
+    tub = function(player, st, go)
+        if st.bath then return msg(player, "Вы уже в ванне.") end
+        if player:IsInCombat() or player:IsMounted() then return msg(player, "Сейчас не время для ванны.") end
+        local gx, gy, gz, go_o = go:GetLocation()
+        player:NearTeleport(gx, gy, gz + 0.1, go_o)
+        setUndressed(player, true)
+        player:SetStandState(1)
+        player:SetRooted(true)
+        -- пена и пар, как в Симс: пена закрывает всё, что ниже плеч
+        local m, fx = player:GetMapId(), {}
+        for _, e in ipairs({ { CFG.FOAM_ENTRY, 0.2 }, { CFG.BUBBLES_ENTRY, 0.6 }, { CFG.STEAM_ENTRY, 1.1 } }) do
+            local o = PerformIngameSpawn(2, e[1], m, 0, gx, gy, gz + e[2], go_o, false)
+            if o then fx[#fx + 1] = o:GetGUID() end
+        end
+        st.bath = fx
+        msg(player, "Вы погрузились в горячую ванну с пеной... (" .. CFG.BATH_SECONDS .. " сек)")
+        player:RegisterEvent(function(_, _, _, p)
+            p:SetRooted(false)
+            setUndressed(p, false)
+            p:SetStandState(0)
+            local map = p:GetMap()
+            for _, g in ipairs(fx) do local o = map:GetWorldObject(g); if o then o:RemoveFromWorld(false) end end
+            local s2 = S[p:GetGUIDLow()]
+            if s2 then
+                s2.bath = nil
+                s2.needs.hygiene = 100
+                add(s2, "fun", 8); add(s2, "energy", 4)
+                msg(p, "Вы приняли ванну и благоухаете, как цветок Мирового древа.")
+                sendHud(p, s2)
+            end
+        end, CFG.BATH_SECONDS * 1000, 1)
+    end,
+    washbasin = function(player, st)
+        local cd = cooldown(st, "basin", 30)
+        if cd then return msg(player, "Вы только что умывались.") end
+        add(st, "hygiene", 40)
+        rootFor(player, 2)
+        msg(player, "Вы умылись. Свежо!")
+    end,
+    toilet = function(player, st, go)
+        if player:IsMounted() then return msg(player, "Сначала спешьтесь.") end
+        local gx, gy, gz, go_o = go:GetLocation()
+        -- садимся прямо на унитаз, лицом от бачка
+        player:NearTeleport(gx, gy, gz + CFG.TOILET_Z, go_o)
+        player:SetStandState(5)
+        rootFor(player, 5)
+        player:RegisterEvent(function(_, _, _, p)
+            local s2 = S[p:GetGUIDLow()]
+            p:SetStandState(0)
+            if s2 then
+                s2.needs.bladder = 100
+                add(s2, "hygiene", -3)
+                msg(p, "Какое облегчение! Не забудьте помыть руки.")
+                sendHud(p, s2)
+            end
+        end, 5000, 1)
+        msg(player, "*занято*")
+    end,
+    books = function(player, st)
+        local cd = cooldown(st, "books", 60)
+        if cd then return msg(player, "Вы ещё обдумываете прочитанное. Подождите " .. cd .. " сек.") end
+        add(st, "fun", 20 * (hasTrait(st, "bookworm") and 2 or 1)); add(st, "energy", -2)
+        player:SetStandState(1)
+        msg(player, "Вы почитали " .. pick(TX.BOOKS) .. ".")
+    end,
+    table = function(player, st)
+        local cd = cooldown(st, "table", 90)
+        if cd then return msg(player, "Вы только что поели. Подождите " .. cd .. " сек.") end
+        add(st, "hunger", 20)
+        local company = 0
+        for _, p in ipairs(player:GetPlayersInRange(8) or {}) do
+            if p:GetGUIDLow() ~= player:GetGUIDLow() then company = company + 1 end
+        end
+        add(st, "social", 8 + math.min(company, 3) * 6)
+        player:SetStandState(5)
+        msg(player, company > 0 and "Вы пообедали в приятной компании." or "Вы пообедали за столом.")
+    end,
+    music = function(player, st)
+        local cd = cooldown(st, "music", 60)
+        if cd then return msg(player, "Нужно передохнуть. Подождите " .. cd .. " сек.") end
+        add(st, "fun", 18); add(st, "social", 4)
+        player:PerformEmote(EMOTE.CHEER)
+        for _, p in ipairs(player:GetPlayersInRange(15) or {}) do
+            local ps = S[p:GetGUIDLow()]
+            if ps and p:GetGUIDLow() ~= player:GetGUIDLow() then add(ps, "fun", 8); msg(p, player:GetName() .. " играет музыку. Веселье +8.") end
+        end
+        msg(player, "Вы сыграли зажигательную мелодию!")
+    end,
+    fireplace = function(player, st)
+        local cd = cooldown(st, "fire", 60)
+        if cd then return msg(player, "Огонь и так горит. Подождите " .. cd .. " сек.") end
+        add(st, "energy", 8); add(st, "fun", 8)
+        player:SetStandState(1)
+        msg(player, "Вы погрелись у камина. Уютно...")
+    end,
+    fountain = function(player, st)
+        local cd = cooldown(st, "fountain", 45)
+        if cd then return msg(player, "Подождите " .. cd .. " сек.") end
+        add(st, "fun", 8); add(st, "hygiene", 10)
+        msg(player, "Вы бросили монетку в фонтан и загадали желание.")
+    end,
+    toy = function(player, st)
+        local cd = cooldown(st, "toy", 45)
+        if cd then return msg(player, "Подождите " .. cd .. " сек.") end
+        add(st, "fun", 15)
+        for _, k in ipairs(st.kids) do if st.kidsOut[k.id] then k.happy = clamp(k.happy + 15, 0, 100) end end
+        msg(player, next(st.kidsOut) and "Вы поиграли вместе с детьми. Все довольны!" or "Вы немного поиграли. Детство вспомнилось!")
+    end,
+    target = function(player, st)
+        local cd = cooldown(st, "target", 30)
+        if cd then return msg(player, "Подождите " .. cd .. " сек.") end
+        add(st, "fun", (hasTrait(st, "active") and 16 or 8)); add(st, "energy", -3)
+        msg(player, pick({ "В яблочко!", "Почти в центр!", "Мимо... Ещё разок!" }))
+    end,
+    picnic = function(player, st)
+        local cd = cooldown(st, "picnic", 90)
+        if cd then return msg(player, "Подождите " .. cd .. " сек.") end
+        add(st, "hunger", 25)
+        local company = #(player:GetPlayersInRange(10) or {})
+        add(st, "social", 6 + math.min(company, 3) * 6); add(st, "fun", 6)
+        player:SetStandState(1)
+        msg(player, "Вы устроили пикник!")
+    end,
+}
+
+------------------------------------------------------------------------
+-- 5.0: НАРЯДЫ, ЗЕРКАЛО, СУНДУК
+------------------------------------------------------------------------
+local MENU_PLAYER = 19010   -- меню, которое открывается без NPC (шкаф, зеркало, метки дома)
+TX.OUTFITS = {
+    { name = "Домашняя одежда", m = { [3] = 4344, [6] = 38278 }, f = { [3] = 2576, [6] = 38278 } },
+    { name = "Халат",           m = { [4] = 44800 },              f = { [4] = 44800 } },
+    { name = "Простое платье / рубаха", m = { [3] = 2576, [6] = 38278 }, f = { [4] = 6786 } },
+    { name = "Нарядная одежда", m = { [4] = 22277 },              f = { [4] = 22276 } },
+    { name = "Деловой костюм",  m = { [3] = 4334, [4] = 10218, [6] = 10217, [7] = 10211 },
+                                f = { [3] = 4334, [4] = 10218, [6] = 10217, [7] = 10211 } },
+    { name = "Свадебный наряд", m = { [3] = 10034, [4] = 10036, [6] = 10035, [7] = 6836 }, f = { [4] = 10040, [7] = 6836 } },
+}
+
+-- наряд — только внешний вид: настоящая экипировка и её характеристики не меняются
+local function applyOutfit(player, st)
+    if not st.outfit or st.bath then return end
+    for _, slot in ipairs(TX.BATH_SLOTS) do
+        player:SetUInt32Value(VISIBLE_ITEM_FIELD + slot * 2, st.outfit[slot] or 0)
+    end
+end
+local function restoreGear(player)
+    for _, slot in ipairs(TX.BATH_SLOTS) do
+        local it = player:GetEquippedItemBySlot(slot)
+        player:SetUInt32Value(VISIBLE_ITEM_FIELD + slot * 2, it and it:GetEntry() or 0)
+    end
+end
+local function currentLook(player)
+    local o = {}
+    for _, slot in ipairs(TX.BATH_SLOTS) do
+        local v = player:GetUInt32Value(VISIBLE_ITEM_FIELD + slot * 2)
+        if v and v > 0 then o[slot] = v end
+    end
+    return o
+end
+
+local function wardrobeMenu(player, st)
+    player:GossipClearMenu()
+    F.gAdd(player, 0, "|cff4fc3f7Гардероб|r — сменить одежду (меняется только внешний вид)", 50, 0)
+    for i, o in ipairs(TX.OUTFITS) do F.gAdd(player, 1, o.name, 50, i) end
+    st.saved = st.saved or {}
+    for i = 1, 3 do
+        if st.saved[i] then F.gAdd(player, 1, "Мой наряд " .. i, 50, 10 + i) end
+    end
+    for i = 1, 3 do F.gAdd(player, 0, "Запомнить, как я сейчас одет(а), как наряд " .. i, 50, 20 + i) end
+    F.gAdd(player, 0, "Снова носить свою экипировку", 50, 99)
+    player:GossipSendMenu(CFG.NPC_TEXT, player, MENU_PLAYER)
+end
+
+local function wardrobeSelect(player, st, intid)
+    player:GossipComplete()
+    if intid == 99 then
+        st.outfit = nil
+        restoreGear(player)
+        msg(player, "Вы снова в своей экипировке.")
+    elseif intid >= 1 and intid <= #TX.OUTFITS then
+        local o = TX.OUTFITS[intid]
+        local src = player:GetGender() == 1 and o.f or o.m
+        st.outfit = {}
+        for k, v in pairs(src) do st.outfit[k] = v end
+        applyOutfit(player, st)
+        msg(player, "Вы переоделись: |cffffd100" .. o.name .. "|r.")
+    elseif intid >= 11 and intid <= 13 then
+        local o = st.saved and st.saved[intid - 10]
+        if o then
+            st.outfit = {}
+            for k, v in pairs(o) do st.outfit[k] = v end
+            applyOutfit(player, st)
+            msg(player, "Вы надели свой наряд " .. (intid - 10) .. ".")
+        end
+    elseif intid >= 21 and intid <= 23 then
+        st.saved = st.saved or {}
+        st.saved[intid - 20] = currentLook(player)
+        msg(player, "Наряд " .. (intid - 20) .. " запомнен.")
+    end
+    player:PerformEmote(EMOTE.SHY)
+    saveState(player:GetGUIDLow(), st)
+end
+
+local function barberAt(player, st, x, y, z, o)
+    -- табурет у зеркала — настоящее кресло парикмахера, ядро само проверит его при оплате
+    local cx, cy = x + math.cos(o) * 1.0, y + math.sin(o) * 1.0
+    local face = (o + math.pi) % (2 * math.pi)
+    local chair = PerformIngameSpawn(2, CFG.BARBER_STOOL, player:GetMapId(), 0, cx, cy, z, face, false)
+    player:NearTeleport(cx, cy, z, face)
+    local pk = CreatePacket(0x427, 0)          -- SMSG_ENABLE_BARBER_SHOP: открыть окно парикмахерской
+    player:SendPacket(pk)
+    player:SetStandState(6)                    -- сидя на высоком стуле (4 + высота кресла 2)
+    msg(player, "Вы сели перед зеркалом. Выберите причёску в открывшемся окне.")
+    if chair then
+        local g = chair:GetGUID()
+        player:RegisterEvent(function(_, _, _, p)
+            local c = p:GetMap():GetWorldObject(g)
+            if c then c:RemoveFromWorld(false) end
+        end, 120000, 1)
+    end
+end
+
+local function vanityMenu(player, st, x, y, z, o)
+    st.vanityAt = { x, y, z, o }
+    player:GossipClearMenu()
+    F.gAdd(player, 0, "|cff4fc3f7Тумбочка с зеркалом|r", 51, 0)
+    F.gAdd(player, 1, "Посмотреть в зеркало: причёска, цвет волос, борода", 51, 1)
+    F.gAdd(player, 1, "Сменить одежду", 51, 2)
+    F.gAdd(player, 0, "Привести себя в порядок (гигиена, настроение)", 51, 3)
+    player:GossipSendMenu(CFG.NPC_TEXT, player, MENU_PLAYER)
+end
+
+local function vanitySelect(player, st, intid)
+    if intid == 2 then return wardrobeMenu(player, st) end
+    player:GossipComplete()
+    local v = st.vanityAt
+    if intid == 1 and v then
+        barberAt(player, st, v[1], v[2], v[3], v[4])
+    elseif intid == 3 then
+        local cd = cooldown(st, "vanity", 60)
+        if cd then return msg(player, "Вы уже прихорашивались. Подождите " .. cd .. " сек.") end
+        add(st, "hygiene", 10); add(st, "fun", 4)
+        player:PerformEmote(EMOTE.SHY)
+        msg(player, "Вы причесались и поправили одежду. Красота!")
+        sendHud(player, st)
+    end
+end
+
+FURN_ACTION.wardrobe = function(player, st) wardrobeMenu(player, st) end
+FURN_ACTION.vanity = function(player, st, go) local x, y, z, o = go:GetLocation(); vanityMenu(player, st, x, y, z, o) end
+FURN_ACTION.chest = function(player, st)
+    player:SendShowBank(player)
+    msg(player, "Сундук открыт: здесь лежат вещи вашего банка — складывайте и забирайте.")
+end
+FURN_ACTION.seat = function(player, st, go)
+    local x, y, z, o = go:GetLocation()
+    player:NearTeleport(x, y, z, o)
+    player:SetStandState(5)
+end
+
+------------------------------------------------------------------------
+-- 5.0: ВСТРОЕННАЯ МЕБЕЛЬ ГОТОВОГО ДОМА («метки»)
+------------------------------------------------------------------------
+TX.SPOT_KINDS = {
+    { "bed", "Кровать" }, { "stove", "Плита / очаг" }, { "table", "Обеденный стол" }, { "seat", "Стул / скамья" },
+    { "tub", "Ванна" }, { "toilet", "Уборная" }, { "washbasin", "Умывальник" }, { "books", "Книги" },
+    { "fireplace", "Камин" }, { "wardrobe", "Шкаф" }, { "chest", "Сундук" }, { "vanity", "Зеркало" }, { "music", "Музыка" },
+}
+TX.SPOT_NAME = {}
+for _, k in ipairs(TX.SPOT_KINDS) do TX.SPOT_NAME[k[1]] = k[2] end
+
+local function spotObj(r)
+    return { spotKey = r.kind and ("s" .. r.id) or ("g" .. (r.spawn or 0)), spawn = r.spawn, GetLocation = function() return r.x, r.y, r.z, r.o end }
+end
+
+-- ближайший свой дом (здание) и расстояние до него
+local function nearestHouse(player, st)
+    local x, y = player:GetLocation()
+    local best, bd
+    for _, r in ipairs(st.furn) do
+        local it = ITEM_BY_ENTRY[r.entry]
+        if it and it.kind == "house" and r.map == player:GetMapId() then
+            local d = dist2(x, y, r.x, r.y)
+            if not bd or d < bd then best, bd = r, d end
+        end
+    end
+    return best, bd
+end
+
+local function markSpot(player, st, kind)
+    if not TX.SPOT_NAME[kind] then return end
+    local h, d = nearestHouse(player, st)
+    local it = h and ITEM_BY_ENTRY[h.entry]
+    if not h or d > (it.r or 12) + 4 then return msg(player, "Метки ставятся только внутри вашего готового дома.") end
+    if #st.spots >= CFG.MAX_SPOTS then return msg(player, "Слишком много меток (максимум " .. CFG.MAX_SPOTS .. ").") end
+    local x, y, z, o = player:GetLocation()
+    local sid = F.newId("character_sims_spots")
+    CharDBExecute(string.format("INSERT INTO character_sims_spots (id, guid, kind, map, x, y, z, o) VALUES (%d, %d, '%s', %d, %.3f, %.3f, %.3f, %.3f)",
+        sid, player:GetGUIDLow(), kind, player:GetMapId(), x, y, z, o))
+    st.spots[#st.spots + 1] = { id = sid, kind = kind, map = player:GetMapId(), x = x, y = y, z = z, o = o }
+    msg(player, "|cff40ff40Отмечено:|r " .. TX.SPOT_NAME[kind] .. ". Теперь эта мебель дома работает (кнопка «Действие» или /sleep рядом с кроватью).")
+end
+
+local function nearestSpot(player, st, maxd, kind)
+    local x, y, z = player:GetLocation()
+    local best, bd, bi
+    for i, r in ipairs(st.spots) do
+        if r.map == player:GetMapId() and (not kind or r.kind == kind) and math.abs(r.z - z) < 4 then
+            local d = dist2(x, y, r.x, r.y)
+            if d <= maxd and (not bd or d < bd) then best, bd, bi = r, d, i end
+        end
+    end
+    return best, bi
+end
+
+local function deleteSpot(player, st)
+    local r, i = nearestSpot(player, st, 4)
+    if not r then return msg(player, "Рядом нет меток.") end
+    CharDBExecute("DELETE FROM character_sims_spots WHERE id = " .. r.id)
+    table.remove(st.spots, i)
+    msg(player, "Метка «" .. TX.SPOT_NAME[r.kind] .. "» убрана.")
+end
+
+-- «Действие»: использовать ближайшую мебель (свою или встроенную в дом)
+local function useNearest(player, st)
+    local x, y = player:GetLocation()
+    local best, bd, obj
+    for _, r in ipairs(st.furn) do
+        local it = ITEM_BY_ENTRY[r.entry]
+        local kind = it and (it.seat and "seat" or it.kind)
+        if kind and FURN_ACTION[kind] and r.map == player:GetMapId() then
+            local d = dist2(x, y, r.x, r.y)
+            if d <= 3.5 and (not bd or d < bd) then best, bd, obj = kind, d, spotObj(r) end
+        end
+    end
+    local s = nearestSpot(player, st, 3)
+    if s then
+        local d = dist2(x, y, s.x, s.y)
+        if not bd or d < bd then best, bd, obj = s.kind, d, spotObj(s) end
+    end
+    if not best then return msg(player, "Рядом нет мебели, которой можно воспользоваться.") end
+    FURN_ACTION[best](player, st, obj)
+    sendHud(player, st)
+end
+
+local function spotsMenu(player, st)
+    player:GossipClearMenu()
+    F.gAdd(player, 0, "|cff4fc3f7Обустройство дома|r: встаньте у мебели внутри дома и выберите, что это", 52, 0)
+    for i, k in ipairs(TX.SPOT_KINDS) do F.gAdd(player, 4, "Здесь " .. k[2]:lower(), 52, i) end
+    F.gAdd(player, 0, "Убрать ближайшую метку", 52, 98)
+    F.gAdd(player, 0, "Показать метки (" .. #st.spots .. ")", 52, 97)
+    player:GossipSendMenu(CFG.NPC_TEXT, player, MENU_PLAYER)
+end
+
+local function spotsSelect(player, st, intid)
+    if intid == 98 then deleteSpot(player, st)
+    elseif intid == 97 then
+        for _, r in ipairs(st.spots) do
+            local x, y = player:GetLocation()
+            msg(player, string.format("%s — %.0f м", TX.SPOT_NAME[r.kind], dist2(x, y, r.x, r.y)))
+        end
+    elseif TX.SPOT_KINDS[intid] then
+        markSpot(player, st, TX.SPOT_KINDS[intid][1])
+    end
+    if intid ~= 0 then return spotsMenu(player, st) end
+    player:GossipComplete()
+end
+
+local function onPlayerMenu(event, player, object, sender, intid, code, menuId)
+    local st = S[player:GetGUIDLow()]
+    if not st then return player:GossipComplete() end
+    if sender == 50 then wardrobeSelect(player, st, intid)
+    elseif sender == 51 then vanitySelect(player, st, intid)
+    elseif sender == 52 then spotsSelect(player, st, intid)
+    elseif sender == 53 then F.computerSelect(player, st, intid)
+    elseif sender == 54 then F.tvSelect(player, st, intid)
+    elseif sender == 55 then F.fridgeSelect(player, st, intid)
+    elseif sender == 56 then F.cakeSelect(player, st, intid)
+    elseif sender == 57 then F.repairSelect(player, st, intid)
+    elseif sender == 58 then F.phoneSelect(player, st, intid)
+    elseif sender == 60 then F.aspSelect(player, st, intid)
+    else player:GossipComplete() end
+end
+
+------------------------------------------------------------------------
+-- 6.0: ЗАНЯТИЯ С ПРЕДМЕТАМИ, ПОЛОМКИ, РЕМОНТ
+------------------------------------------------------------------------
+TX.HERBS = { herb1 = 2447, herb2 = 765, herb3 = 785, herb4 = 2452, herb5 = 2453, herb6 = 36901 }
+TX.ELECTRIC = { computer = true, tv = true, fridge = true }
+TX.BREAKABLE = { stove = true, tub = true, toilet = true, washbasin = true, computer = true, tv = true, fridge = true }
+
+-- занятие: персонаж стоит/сидит N секунд, потом результат
+function F.activity(player, st, secs, opt, done)
+    if st.busyTill and now() < st.busyTill then return msg(player, "Вы уже чем-то заняты.") end
+    st.busyTill = now() + secs
+    player:SetRooted(true)
+    if opt.stand then player:SetStandState(opt.stand) end
+    if opt.emote then player:EmoteState(opt.emote) end
+    if opt.text then msg(player, opt.text) end
+    player:RegisterEvent(function(_, _, _, p)
+        p:SetRooted(false)
+        p:EmoteState(0)
+        if opt.stand then p:SetStandState(0) end
+        local s2 = S[p:GetGUIDLow()]
+        if s2 then s2.busyTill = nil; done(p, s2); sendHud(p, s2) end
+    end, secs * 1000, 1)
+end
+
+function F.isSpot(go) return type(go) == "table" and rawget(go, "spotKey") ~= nil end
+function F.objKey(go)
+    -- go — настоящий объект (userdata) или метка дома (таблица)
+    if F.isSpot(go) then return go.spotKey end
+    return "g" .. go:GetSpawnId()
+end
+
+function F.repairMenu(player, st, key, kind)
+    st.repairKey, st.repairKind = key, kind
+    player:GossipClearMenu()
+    F.gAdd(player, 0, "|cffff8040Сломано!|r Предмет не работает.", 57, 0)
+    F.gAdd(player, 1, "Починить самому (навык «Мастерство»: " .. F.skillLevel(st, "handiness") .. ")", 57, 1)
+    F.gAdd(player, 1, "Вызвать мастера (" .. money(levelPrice(player, 20000)) .. ")", 57, 2)
+    player:GossipSendMenu(CFG.NPC_TEXT, player, MENU_PLAYER)
+end
+function F.repairSelect(player, st, intid)
+    player:GossipComplete()
+    local key, kind = st.repairKey, st.repairKind
+    if not key or not st.broken[key] then return end
+    if intid == 2 then
+        local price = levelPrice(player, 20000)
+        if player:GetCoinage() < price then return msg(player, "Не хватает денег.") end
+        player:ModifyMoney(-price)
+        st.broken[key] = nil
+        return msg(player, "Мастер всё починил.")
+    end
+    F.activity(player, st, 6, { emote = 233, text = "Вы чините..." }, function(p, s2)
+        local lvl = F.skillLevel(s2, "handiness")
+        F.skillGain(p, s2, "handiness", 35)
+        if math.random() < 0.55 + lvl * 0.05 then
+            s2.broken[key] = nil
+            msg(p, "|cff40ff40Починено!|r")
+        elseif TX.ELECTRIC[kind] and math.random() < 0.5 then
+            add(s2, "energy", -15)
+            F.addMoodlet(p, s2, "shock")
+            msg(p, "|cffff4040Вас ударило током!|r Попробуйте ещё раз.")
+        else
+            msg(p, "Не получилось. Попробуйте ещё раз — опыт растёт.")
+        end
+    end)
+end
+
+-- обёртка: сломанное не работает, без оплаты счетов электроника выключена, иногда ломается после использования
+function F.wrapBreakable(kind)
+    local orig = FURN_ACTION[kind]
+    if not orig then return end
+    FURN_ACTION[kind] = function(player, st, go)
+        local key = F.objKey(go)
+        st.broken = st.broken or {}
+        if st.broken[key] then return F.repairMenu(player, st, key, kind) end
+        if TX.ELECTRIC[kind] and st.powerOff then return msg(player, "|cffff8040Свет отключили за неуплату.|r Оплатите счета (телефон в панели).") end
+        orig(player, st, go)
+        if math.random() < CFG.BREAK_CHANCE then
+            st.broken[key] = true
+            msg(player, "|cffff8040Ой! Что-то сломалось.|r Нужен ремонт.")
+        end
+    end
+end
+
+-- кулинария: плита готовит тем лучше, чем выше навык
+FURN_ACTION.stove = function(player, st)
+    local cd = cooldown(st, "stove", 60)
+    if cd then return msg(player, "Плита ещё горячая. Подождите " .. cd .. " сек.") end
+    local lvl = F.skillLevel(st, "cooking")
+    F.activity(player, st, 5, { emote = 69, text = "Вы готовите..." }, function(p, s2)
+        add(s2, "hunger", (35 + lvl * 4) * (hasTrait(s2, "glutton") and 1.5 or 1)); add(s2, "fun", 3)
+        F.skillGain(p, s2, "cooking", 30 * (F.isHoliday and F.isHoliday("harvest") and 2 or 1))
+        F.count(p, s2, "cook")
+        if lvl >= 4 and math.random() < 0.15 + lvl * 0.05 then
+            F.addMoodlet(p, s2, "meal")
+            msg(p, "Получилось изысканное блюдо: " .. pick(TX.DISHES) .. "!")
+        else
+            msg(p, "Вы приготовили и съели " .. pick(TX.DISHES) .. ".")
+        end
+    end)
+end
+
+FURN_ACTION.fridge = function(player, st)
+    player:GossipClearMenu()
+    F.gAdd(player, 0, "|cff4fc3f7Кладовая|r", 55, 0)
+    F.gAdd(player, 1, "Перекусить (голод +25)", 55, 1)
+    F.gAdd(player, 1, "Приготовить ужин на всю семью", 55, 2)
+    F.gAdd(player, 1, "Выпить чаю (энергия, бодрость)", 55, 3)
+    player:GossipSendMenu(CFG.NPC_TEXT, player, MENU_PLAYER)
+end
+function F.fridgeSelect(player, st, intid)
+    player:GossipComplete()
+    if intid == 1 then
+        F.activity(player, st, 3, { emote = 69 }, function(p, s2) add(s2, "hunger", 25); msg(p, "Вы перекусили.") end)
+    elseif intid == 2 then
+        local lvl = F.skillLevel(st, "cooking")
+        F.activity(player, st, 8, { emote = 69, text = "Вы готовите ужин для всей семьи..." }, function(p, s2)
+            add(s2, "hunger", 50 + lvl * 3); add(s2, "social", 10)
+            F.skillGain(p, s2, "cooking", 45); F.count(p, s2, "cook")
+            for _, k in ipairs(s2.kids) do k.happy = clamp(k.happy + 10, 0, 100) end
+            msg(p, "Семейный ужин удался! Все сыты и довольны.")
+            if lvl >= 5 then F.addMoodlet(p, s2, "meal") end
+        end)
+    elseif intid == 3 then
+        F.activity(player, st, 3, { emote = 69 }, function(p, s2) add(s2, "energy", 10); F.addMoodlet(p, s2, "coffee"); msg(p, "Чай с мёдом. Бодрит!") end)
+    end
+end
+
+FURN_ACTION.computer = function(player, st)
+    player:GossipClearMenu()
+    F.gAdd(player, 0, "|cff4fc3f7Гномий терминал|r", 53, 0)
+    F.gAdd(player, 1, "Играть в игры (веселье, «Видеоигры»)", 53, 1)
+    F.gAdd(player, 1, "Программировать (с 3 уровня — заказы за деньги)", 53, 2)
+    F.gAdd(player, 1, "Писать книгу (" .. ((st.cnt or {}).pages or 0) % 100 .. "/100 страниц)", 53, 3)
+    F.gAdd(player, 1, "Общаться в сети (общение)", 53, 4)
+    F.gAdd(player, 1, "Каталог мебели", 53, 5)
+    F.gAdd(player, 1, "Оплатить счета", 53, 6)
+    player:GossipSendMenu(CFG.NPC_TEXT, player, MENU_PLAYER)
+end
+function F.computerSelect(player, st, intid)
+    player:GossipComplete()
+    local opt = { emote = 69, stand = nil }
+    if intid == 1 then
+        F.activity(player, st, 8, opt, function(p, s2) add(s2, "fun", 25); F.skillGain(p, s2, "gaming", 35); msg(p, "Вы прошли уровень в «Гоблинских гонках»!") end)
+    elseif intid == 2 then
+        F.activity(player, st, 10, opt, function(p, s2)
+            local lvl = F.skillLevel(s2, "programming")
+            F.skillGain(p, s2, "programming", 40); add(s2, "fun", -3)
+            if lvl >= 3 then
+                local pay = lvl * lvl * p:GetLevel() * 4
+                p:ModifyMoney(pay)
+                msg(p, "Заказ выполнен! Оплата: " .. money(pay) .. ".")
+            else msg(p, "Вы учились программировать.") end
+        end)
+    elseif intid == 3 then
+        F.activity(player, st, 10, opt, function(p, s2)
+            local lvl = F.skillLevel(s2, "writing")
+            F.skillGain(p, s2, "writing", 40)
+            s2.cnt = s2.cnt or {}
+            s2.cnt.pages = (s2.cnt.pages or 0) + 20 + lvl * 4
+            if s2.cnt.pages % 100 < 20 + lvl * 4 then
+                local per = math.max(1, lvl) * p:GetLevel() * 15
+                s2.royalty = s2.royalty or {}
+                s2.royalty[#s2.royalty + 1] = { per = per, days = 7 }
+                F.count(p, s2, "book")
+                msg(p, string.format("|cff40ff40Книга дописана!|r Издательство будет платить %s в игровой день, 7 дней.", money(per)))
+            else
+                msg(p, "Вы написали несколько страниц.")
+            end
+        end)
+    elseif intid == 4 then
+        F.activity(player, st, 6, opt, function(p, s2) add(s2, "social", 15); F.skillGain(p, s2, "charisma", 10); msg(p, "Вы поболтали с друзьями в сети.") end)
+    elseif intid == 5 then
+        sendCatalog(player); send(player, "OPEN;CAT")
+    elseif intid == 6 then
+        F.payBills(player, st)
+    end
+end
+
+FURN_ACTION.tv = function(player, st)
+    player:GossipClearMenu()
+    F.gAdd(player, 0, "|cff4fc3f7Хрустальный шар|r — что посмотреть?", 54, 0)
+    F.gAdd(player, 1, "Комедию", 54, 1)
+    F.gAdd(player, 1, "Кулинарное шоу (+кулинария)", 54, 2)
+    F.gAdd(player, 1, "Романтический фильм", 54, 3)
+    F.gAdd(player, 1, "Новости Азерота", 54, 4)
+    F.gAdd(player, 1, "Арену (спорт, +фитнес)", 54, 5)
+    player:GossipSendMenu(CFG.NPC_TEXT, player, MENU_PLAYER)
+end
+function F.tvSelect(player, st, intid)
+    player:GossipComplete()
+    if intid < 1 or intid > 5 then return end
+    F.activity(player, st, 8, { stand = 1, text = "Вы смотрите передачу..." }, function(p, s2)
+        add(s2, "fun", 20)
+        if intid == 1 then F.addMoodlet(p, s2, "tvcomedy"); F.skillGain(p, s2, "comedy", 15)
+        elseif intid == 2 then F.skillGain(p, s2, "cooking", 20)
+        elseif intid == 3 then F.addMoodlet(p, s2, "tvromance")
+        elseif intid == 4 then F.addMoodlet(p, s2, "tvnews")
+        elseif intid == 5 then F.addMoodlet(p, s2, "tvsport"); F.skillGain(p, s2, "fitness", 8) end
+    end)
+end
+
+FURN_ACTION.easel = function(player, st)
+    F.activity(player, st, 12, { emote = 69, text = "Вы рисуете картину..." }, function(p, s2)
+        local lvl = F.skillLevel(s2, "painting")
+        F.skillGain(p, s2, "painting", 45); add(s2, "fun", 10)
+        F.count(p, s2, "paint")
+        local price = math.floor((lvl + 1) * (lvl + 1) * p:GetLevel() * (s2.emo == "inspired" and 6 or 3))
+        p:ModifyMoney(price)
+        F.addMoodlet(p, s2, "paint")
+        msg(p, string.format("Картина «%s» продана за %s.", pick({ "Закат над Элвиннским лесом", "Портрет гнома", "Буря в Нордсколе",
+            "Натюрморт с яблоком", "Дракон в облаках", "Мой дом" }), money(price)))
+    end)
+end
+
+FURN_ACTION.chess = function(player, st)
+    F.activity(player, st, 10, { stand = 1, text = "Вы играете в шахматы..." }, function(p, s2)
+        F.skillGain(p, s2, "logic", 35); add(s2, "fun", 12)
+        local company = (next(s2.kidsOut) or s2.spouse) and true
+        if company then add(s2, "social", 10) end
+        msg(p, math.random() < 0.3 + F.skillLevel(s2, "logic") * 0.06 and "Шах и мат! Победа." or "Партия проиграна, но вы многому научились.")
+    end)
+end
+
+FURN_ACTION.fitness = function(player, st)
+    if st.needs.energy < 20 then return msg(player, "Слишком мало сил для тренировки.") end
+    F.activity(player, st, 10, { emote = 173, text = "Вы тренируетесь с чучелом..." }, function(p, s2)
+        F.skillGain(p, s2, "fitness", 45); add(s2, "energy", -10); add(s2, "hygiene", -12); add(s2, "fun", 5)
+        F.count(p, s2, "workout")
+        F.addMoodlet(p, s2, "workout")
+    end)
+end
+
+FURN_ACTION.bar = function(player, st)
+    F.activity(player, st, 6, { emote = 69, text = "Вы смешиваете коктейль..." }, function(p, s2)
+        local lvl = F.skillLevel(s2, "mixology")
+        F.skillGain(p, s2, "mixology", 35); add(s2, "fun", 10 + lvl); add(s2, "bladder", -15)
+        F.addMoodlet(p, s2, "drink")
+        msg(p, "Коктейль «" .. pick({ "Огонь Пылающих степей", "Лунный свет Даларана", "Гоблинская ракета", "Тихая гавань" }) .. "» удался!")
+    end)
+end
+
+FURN_ACTION.globe = function(player, st)
+    F.activity(player, st, 8, { emote = 69, text = "Вы изучаете звёздный глобус..." }, function(p, s2)
+        F.skillGain(p, s2, "logic", 30); add(s2, "fun", 8); F.addMoodlet(p, s2, "stars")
+    end)
+end
+
+FURN_ACTION.clock = function(player, st)
+    msg(player, string.format("Сейчас |cffffd100%s|r, %s, %s. Погода: %s.", clockText(), F.weekdayName(), F.seasonName(), F.weatherName()))
+end
+
+FURN_ACTION.plant = function(player, st, go)
+    local key = F.objKey(go)
+    st.plants = st.plants or {}
+    local herb
+    for _, r in ipairs(st.furn) do
+        local sid
+        if F.isSpot(go) then sid = go.spawn else sid = go:GetSpawnId() end
+        if sid and r.spawn == sid then
+            local it = ITEM_BY_ENTRY[r.entry]; herb = it and TX.HERBS[it.id]
+        end
+    end
+    F.activity(player, st, 5, { emote = 69, text = "Вы ухаживаете за растением..." }, function(p, s2)
+        F.skillGain(p, s2, "gardening", 25); add(s2, "fun", 5)
+        if herb and s2.plants[key] ~= simDay() then
+            s2.plants[key] = simDay()
+            local n = 1 + math.floor(F.skillLevel(s2, "gardening") / 3)
+            if p:AddItem(herb, n) then msg(p, "Урожай собран (×" .. n .. ").") end
+            F.count(p, s2, "harvest", n)
+        elseif herb then
+            msg(p, "Сегодня урожай уже собран. Приходите завтра.")
+        end
+    end)
+end
+
+FURN_ACTION.cake = function(player, st)
+    player:GossipClearMenu()
+    F.gAdd(player, 0, "|cff4fc3f7Праздничный торт|r", 56, 0)
+    for i, k in ipairs(st.kids) do
+        if kidStage(k) < 5 and not k.moved then F.gAdd(player, 1, "День рождения: " .. k.name .. " задувает свечи", 56, i) end
+    end
+    F.gAdd(player, 1, "Съесть кусочек", 56, 99)
+    player:GossipSendMenu(CFG.NPC_TEXT, player, MENU_PLAYER)
+end
+function F.cakeSelect(player, st, intid)
+    player:GossipComplete()
+    if intid == 99 then add(st, "hunger", 15); add(st, "fun", 5); return msg(player, "Вкусно!") end
+    local k = st.kids[intid]
+    if not k then return end
+    local stg = kidStage(k)
+    local need = CFG.KID_STAGE_DAYS[stg]
+    if need then
+        k.born = math.floor(now() - need * daySeconds() - 1)
+        CharDBExecute(string.format("UPDATE character_sims_children SET born = %d WHERE id = %d", k.born, k.id))
+    end
+    local c = kidObj(player, st, k)
+    if c then applyKidLook(c, k); c:PerformEmote(EMOTE.CHEER); kidSay(c, k, "Ура! Мне исполнилось... я стал(а) больше!") end
+    player:PerformEmote(EMOTE.CHEER)
+    F.addMoodlet(player, st, "party")
+    k.happy = clamp(k.happy + 20, 0, 100)
+    msg(player, string.format("|cffff80ffС днём рождения, %s!|r Теперь: %s.", k.name, TX.KID_STAGES[kidStage(k)]))
+    if kidStage(k) >= 5 then F.count(player, st, "grown") end
+end
+
+-- музыка теперь качает навык и приносит чаевые
+do
+    local orig = FURN_ACTION.music
+    FURN_ACTION.music = function(player, st, go)
+        orig(player, st, go)
+        F.skillGain(player, st, "music", 35)
+        local lvl = F.skillLevel(st, "music")
+        if lvl >= 5 and #(player:GetPlayersInRange(20) or {}) + #(player:GetCreaturesInRange(15, 0, 2, 1) or {}) > 2 then
+            local tip = lvl * player:GetLevel() * 3
+            player:ModifyMoney(tip)
+            msg(player, "Слушатели бросают монеты: " .. money(tip) .. ".")
+        end
+    end
+    local origBooks = FURN_ACTION.books
+    FURN_ACTION.books = function(player, st, go)
+        origBooks(player, st, go)
+        F.skillGain(player, st, "logic", 10); F.skillGain(player, st, "writing", 8)
+        F.addMoodlet(player, st, "read")
+    end
+    local origTarget = FURN_ACTION.target
+    FURN_ACTION.target = function(player, st, go) origTarget(player, st, go); F.skillGain(player, st, "fitness", 15) end
+    local origTub = FURN_ACTION.tub
+    FURN_ACTION.tub = function(player, st, go) origTub(player, st, go); F.addMoodlet(player, st, "bath") end
+end
+
+for kind in pairs(TX.BREAKABLE) do F.wrapBreakable(kind) end
+
+local function onFurnitureHello(event, player, go)
+    player:GossipComplete()
+    if isBot(player) then return true end
+    local st = S[player:GetGUIDLow()]
+    local it = ITEM_BY_ENTRY[go:GetEntry()]
+    if st and it and it.kind and FURN_ACTION[it.kind] then
+        FURN_ACTION[it.kind](player, st, go)
+        sendHud(player, st)
+    end
+    return true
+end
+
+------------------------------------------------------------------------
+-- ОБЩЕНИЕ
+------------------------------------------------------------------------
+local SOCIAL = {
+    { key = "talk",      name = "Поболтать",               df = 3,  dr = 0,  social = 6,  fun = 1, react = "friend",  emote = EMOTE.TALK },
+    { key = "joke",      name = "Пошутить",                df = 4,  dr = 0,  social = 4,  fun = 5, react = "laugh",   emote = EMOTE.LAUGH, risky = true },
+    { key = "compliment",name = "Сделать комплимент",      df = 4,  dr = 1,  social = 5,  fun = 1, react = "friend",  emote = EMOTE.SHY },
+    { key = "hug",       name = "Обнять",       needF = 20, df = 3,  dr = 1,  social = 8,  fun = 2, react = "friend",  emote = EMOTE.SHY, act = "обнимает" },
+    { key = "gift",      name = "Подарить подарок",        df = 10, dr = 2,  social = 6,  fun = 3, react = "gift",    emote = EMOTE.CHEER, cost = true },
+    { key = "flirt",     name = "Флиртовать",   needF = 20, df = 1,  dr = 5,  social = 6,  fun = 3, react = "romance", emote = EMOTE.SHY, romantic = true },
+    { key = "kiss",      name = "Поцеловать",   needR = 30, df = 2,  dr = 6,  social = 10, fun = 4, react = "romance", emote = EMOTE.SHY, romantic = true, consent = true, act = "целует" },
+    { key = "date",      name = "Предложить встречаться", needR = 50, needF = 40, ask = true, consent = true, status = "dating", romantic = true },
+    { key = "propose",   name = "Сделать предложение",    needR = 80, needStatus = "dating", ask = true, consent = true, status = "married", romantic = true },
+    { key = "woohoo",    name = "Романтический вечер",    needR = 60, needStatus = "partner", consent = true, social = 30, fun = 30, energy = -10, dr = 4, romantic = true },
+    { key = "baby",      name = "Завести ребёнка",        needR = 70, needStatus = "partner", needHome = true, ask = true, consent = true, romantic = true },
+    { key = "argue",     name = "Поспорить",               df = -5,  dr = -1, social = 2,  fun = 2, react = "offended", emote = EMOTE.RUDE },
+    { key = "insult",    name = "Оскорбить",               df = -10, dr = -5, social = 1,  fun = 1, react = "offended", emote = EMOTE.RUDE },
+    { key = "slap",      name = "Дать пощёчину",           df = -12, dr = -8, social = 0,  fun = 2, react = "offended", emote = EMOTE.CRY, act = "даёт пощёчину" },
+    { key = "breakup",   name = "Расстаться",   needStatus = "partner", status = "ex", df = -20, dr = -40, social = -20, react = "sad", emote = EMOTE.CRY },
+}
+local SOCIAL_BY_KEY = {}
+for _, a in ipairs(SOCIAL) do SOCIAL_BY_KEY[a.key] = a end
+
+local function react(player, target, kind, emote)
+    if not target or not kind then return end
+    local line = pick(TX.LINES[kind]):gsub("%$N", player:GetName())
+    local tid = target:GetTypeId()
+    if tid == 3 then
+        F.say(target, line, 0)
+    elseif tid == 4 and isBot(target) then
+        F.say(target, line, 0)
+    end
+    if emote and (tid == 3 or (tid == 4 and isBot(target))) then target:PerformEmote(emote) end
+end
+
+-- проверка условий; возвращает текст ошибки
+local function fmtDur(sec)
+    sec = math.max(0, math.ceil(sec))
+    if sec >= 3600 then return math.floor(sec / 3600) .. " ч " .. math.floor(sec % 3600 / 60) .. " мин" end
+    if sec >= 60 then return math.ceil(sec / 60) .. " мин" end
+    return sec .. " сек"
+end
+
+TX.NO_CHILD_ACTS = { flirt = true, kiss = true, date = true, propose = true, woohoo = true, baby = true, slap = true, breakup = true, insult = true }
+local function checkSocial(player, st, a, key, r, target)
+    if TX.NO_CHILD_ACTS[a.key] and (r.status == "child" or (target and isChildUnit(target))) then
+        return r.status == "child" and "Это ваш ребёнок." or "Это ребёнок."
+    end
+    if not st.gm.fast then
+        local known = now() - (r.met or now())
+        local together = (r.since and r.since > 0) and (now() - r.since) or 0
+        local D = daySeconds()
+        if a.key == "date" and known < CFG.DATE_MIN_DAYS * D then
+            return "Вы знакомы слишком недавно. Предложить встречаться можно через " .. fmtDur(CFG.DATE_MIN_DAYS * D - known) .. "."
+        end
+        if a.key == "propose" and together < CFG.PROPOSE_MIN_DAYS * D then
+            return "Рано для предложения. Ещё " .. fmtDur(CFG.PROPOSE_MIN_DAYS * D - together) .. " отношений."
+        end
+        if a.key == "baby" and together < CFG.BABY_MIN_DAYS * D then
+            return "Пока рано думать о детях. Ещё " .. fmtDur(CFG.BABY_MIN_DAYS * D - together) .. "."
+        end
+    end
+    if a.needF and r.f < a.needF then return "Вы недостаточно дружны для этого (нужна дружба " .. a.needF .. ")." end
+    if a.needR and r.r < a.needR then return "Нужно больше романтики (" .. a.needR .. ")." end
+    if a.needStatus == "dating" and r.status ~= "dating" then return "Сначала начните встречаться." end
+    if a.needStatus == "partner" and r.status ~= "dating" and r.status ~= "married" then return "Это возможно только с вашим партнёром." end
+    if (a.key == "date" or a.key == "propose") and st.partnerKey and st.partnerKey ~= key then
+        return "Вы уже в отношениях с " .. (st.rel[st.partnerKey] and st.rel[st.partnerKey].name or "другим") .. "."
+    end
+    if a.key == "date" and (r.status == "dating" or r.status == "married") then return "Вы уже вместе." end
+    if a.key == "woohoo" and target and target:GetTypeId() == 3 then
+        local x, y = player:GetLocation()
+        if not st.home or st.home[1] ~= player:GetMapId() or dist2(x, y, st.home[2], st.home[3]) > 60 then return "Романтический вечер — дома, в спальне." end
+    end
+    if a.key == "baby" then
+        if st.preg then return "Ребёнок уже в пути!" end
+        if #st.kids >= CFG.MAX_CHILDREN then return "У вас и так большая семья." end
+        if not st.home then return "Сначала обзаведитесь домом." end
+        local x, y = player:GetLocation()
+        if st.home[1] ~= player:GetMapId() or dist2(x, y, st.home[2], st.home[3]) > 60 then return "Для этого нужно быть дома." end
+    end
+    if a.cost then
+        local price = levelPrice(player, CFG.GIFT_PRICE)
+        if player:GetCoinage() < price then return "Подарок стоит " .. money(price) .. " — не хватает денег." end
+    end
+    return nil
+end
+
+-- итог действия (accepted: true/false для «спрашивающих» действий)
+local function resolveSocial(player, st, target, a, accepted)
+    local key, tname = keyOf(target), nameOf(st, target)
+    local socialMult = hasTrait(st, "party") and 1.5 or (hasTrait(st, "loner") and 0.5 or 1)
+    if st.needs.hygiene < 15 and not hasTrait(st, "slob") then socialMult = socialMult * 0.5 end
+    if a.romantic and hasTrait(st, "family") and st.partnerKey == key then socialMult = socialMult * 1.5 end
+    local r = getRel(st, key, tname)
+    local tid = target:GetTypeId()
+    local realPlayer = tid == 4 and not isBot(target)
+
+    if a.act then F.emote(player, a.act .. " " .. tname .. ".") end
+
+    -- романтический вечер и ребёнок — в спальне, как в Симс
+    if (a.key == "woohoo" or (a.key == "baby" and accepted)) and tid == 3 then
+        local started = F.bedScene(player, st, target, a.key, function(p, s3)
+            changeRelation(p, s3, key, tname, 3, 5)
+            add(s3, "social", 30); add(s3, "fun", 30); add(s3, "energy", -10)
+            if a.key == "baby" then
+                if math.random() < CFG.BABY_CHANCE then
+                    s3.preg = { till = now() + CFG.PREGNANCY_DAYS * daySeconds(), pkey = key, pname = tname, twins = math.random() < CFG.TWIN_CHANCE }
+                    local who = p:GetGender() == 1 and "Вы ждёте ребёнка!" or "В вашей семье скоро пополнение!"
+                    msg(p, "|cffff80ff" .. who .. "|r Малыш появится через " .. fmtDur(CFG.PREGNANCY_DAYS * daySeconds()) .. ".")
+                    F.area(p, who)
+                    saveState(p:GetGUIDLow(), s3)
+                else
+                    msg(p, "В этот раз малыша не будет. Попробуйте ещё раз позже.")
+                end
+            else
+                msg(p, "|cffff80ffЧудесный вечер с " .. tname .. ".|r")
+            end
+        end)
+        if started then return end
+        return msg(player, "Для этого нужна кровать дома. Купите её в каталоге или отметьте встроенную («Обустр.»).")
+    end
+
+    if a.ask then
+        if not accepted then
+            changeRelation(player, st, key, tname, -2, -5)
+            add(st, "social", -5); add(st, "fun", -5)
+            if not realPlayer then react(player, target, "reject", EMOTE.NO) end
+            F.addMoodlet(player, st, "rejected")
+            return msg(player, "|cffff8080" .. tname .. " отказывает.|r")
+        end
+        if a.status then
+            setStatus(player, st, key, tname, a.status)
+            if realPlayer then mirrorStatus(target:GetGUIDLow(), tname, player:GetGUIDLow(), player:GetName(), a.status) end
+            changeRelation(player, st, key, tname, 10, 10)
+            add(st, "social", 30); add(st, "fun", 20)
+            if not realPlayer then react(player, target, "accept", EMOTE.YES) end
+            if a.status == "married" then
+                F.addMoodlet(player, st, "married")
+                F.area(player, "Свадьба! Вы и " .. tname .. " теперь супруги!")
+                for _, p in ipairs(player:GetPlayersInRange(40) or {}) do
+                    if p:GetGUIDLow() ~= player:GetGUIDLow() then msg(p, player:GetName() .. " и " .. tname .. " поженились! Поздравьте молодых!") end
+                end
+            end
+            return msg(player, "|cffff80ff" .. tname .. " соглашается! Вы теперь " .. TX.STATUS_NAME[a.status] .. ".|r")
+        end
+        if a.key == "baby" then
+            add(st, "social", 20); add(st, "fun", 20); add(st, "energy", -10)
+            changeRelation(player, st, key, tname, 3, 5)
+            if math.random() < CFG.BABY_CHANCE then
+                st.preg = { till = now() + CFG.PREGNANCY_DAYS * daySeconds(), pkey = key, pname = tname }
+                local who = player:GetGender() == 1 and "Вы ждёте ребёнка!" or
+                    ((tid ~= 3 and target:GetGender() == 1) and (tname .. " ждёт от вас ребёнка!") or "В вашей семье скоро пополнение!")
+                msg(player, "|cffff80ff" .. who .. "|r Малыш появится через " .. fmtDur(CFG.PREGNANCY_DAYS * daySeconds()) .. ".")
+                F.area(player, who)
+                saveState(player:GetGUIDLow(), st)
+            else
+                msg(player, "В этот раз не получилось. Попробуйте ещё раз позже.")
+            end
+            return
+        end
+    end
+
+    if a.key == "breakup" then
+        if realPlayer then mirrorStatus(target:GetGUIDLow(), tname, player:GetGUIDLow(), player:GetName(), "ex") end
+        setStatus(player, st, key, tname, "ex")
+        changeRelation(player, st, key, tname, a.df, a.dr)
+        add(st, "social", a.social or 0)
+        react(player, target, "sad", EMOTE.CRY)
+        F.addMoodlet(player, st, "breakup")
+        return msg(player, "Вы расстались с " .. tname .. ".")
+    end
+
+    if a.cost then player:ModifyMoney(-levelPrice(player, CFG.GIFT_PRICE)) end
+    local df, dr = a.df or 0, a.dr or 0
+    local kind = a.react
+    if a.risky and r.f < 10 and math.random() < 0.4 then
+        df, kind = -2, "flop"
+    end
+    if a.romantic and hasTrait(st, "romantic") then dr = dr * 2 end
+    r = changeRelation(player, st, key, tname, df, dr)
+    F.count(player, st, "social")
+    if a.key == "joke" then F.skillGain(player, st, kind == "flop" and "comedy" or "comedy", kind == "flop" and 4 or 10)
+    elseif a.key == "insult" or a.key == "slap" or a.key == "argue" then F.skillGain(player, st, "mischief", 10)
+    elseif df > 0 then F.skillGain(player, st, "charisma", 6) end
+    if kind == "flop" then F.addMoodlet(player, st, "flop") end
+    if a.key == "kiss" then F.addMoodlet(player, st, "kiss"); F.count(player, st, "kiss") end
+    if a.key == "hug" then F.addMoodlet(player, st, "hugged") end
+    if a.key == "gift" then F.addMoodlet(player, st, "gift") end
+    if realPlayer then
+        local ts = S[target:GetGUIDLow()]
+        if ts and a.key == "insult" then F.addMoodlet(target, ts, "insulted") end
+        if ts and a.key == "slap" then F.addMoodlet(target, ts, "slapped") end
+        if ts and (a.key == "hug" or a.key == "kiss") then F.addMoodlet(target, ts, a.key == "kiss" and "kiss" or "hugged") end
+    end
+    local cid = tonumber(key:match("^K(%d+)$") or "")
+    if cid then
+        for _, k in ipairs(st.kids) do if k.id == cid then k.happy = clamp(k.happy + math.max(0, df) * 2 - math.max(0, -df), 0, 100) end end
+    end
+    add(st, "social", (a.social or 0) * (a.social and a.social > 0 and socialMult or 1))
+    add(st, "fun", a.fun or 0)
+    if a.energy then add(st, "energy", a.energy) end
+    if kind == "friend" then kind = r.f >= 20 and "friend" or (r.f <= -20 and "hostile" or "neutral") end
+    if a.romantic and r.f < 0 then kind = "awkward" end
+    react(player, target, kind, a.emote)
+    -- живой собеседник тоже получает общение
+    if realPlayer then
+        local ts = S[target:GetGUIDLow()]
+        if ts and df > 0 then add(ts, "social", 4); msg(target, player:GetName() .. ": «" .. a.name .. "». Общение +4.") end
+        if ts and df < 0 then msg(target, player:GetName() .. " ведёт себя грубо с вами.") end
+    end
+    msg(player, a.name .. ": " .. tname .. " — " .. relTitle(r) .. string.format(" (%d/%d)", r.f, r.r))
+end
+
+local function doSocial(player, st, actKey, target)
+    local a = SOCIAL_BY_KEY[actKey]
+    if not a then return end
+    local t = target or player:GetSelection()
+    if not t or (t:GetTypeId() ~= 3 and t:GetTypeId() ~= 4) then return msg(player, "Выделите персонажа или NPC.") end
+    if t:GetTypeId() == 4 and t:GetGUIDLow() == player:GetGUIDLow() then return msg(player, "Это вы сами :)") end
+    if t:IsDead() then return msg(player, "Сейчас не время.") end
+    if t:GetTypeId() == 3 and t:IsInCombat() then return msg(player, "Им сейчас не до вас.") end
+    if player:GetDistance(t) > 8 then return msg(player, "Подойдите ближе.") end
+    local key = keyOf(t)
+    local cd = cooldown(st, "soc_" .. key, 4)
+    if cd then return msg(player, "Не так быстро.") end
+    local r = getRel(st, key, nameOf(st, t))
+    rememberLook(st, key, t)
+    local err = checkSocial(player, st, a, key, r, t)
+    if err then return msg(player, err) end
+    if not st.gm.fast then
+        local left = cooldown(st, "soc_" .. key .. "_" .. a.key, CFG.SOCIAL_CD[a.key] or 60)
+        if left then return msg(player, "«" .. a.name .. "» с " .. r.name .. " можно снова через " .. fmtDur(left) .. ".") end
+    end
+
+    local realPlayer = t:GetTypeId() == 4 and not isBot(t)
+    if realPlayer and a.consent then
+        PENDING[t:GetGUIDLow()] = { from = player:GetName(), fromLow = player:GetGUIDLow(), act = a.key, t = now() }
+        send(t, "Q;" .. a.key .. ";" .. player:GetName() .. ";" .. a.name)
+        msg(t, player:GetName() .. " предлагает: «" .. a.name .. "». Ответьте в окне SimsCraft.")
+        return msg(player, "Ждём ответа " .. t:GetName() .. "...")
+    end
+    local accepted = true
+    if a.ask then
+        local thr = a.needR or 50
+        accepted = math.random() < clamp(0.45 + (r.r - thr) / 60 + r.f / 400, 0.1, 0.95)
+    end
+    resolveSocial(player, st, t, a, accepted)
+end
+
+local function answerRequest(player, yes)
+    local req = PENDING[player:GetGUIDLow()]
+    PENDING[player:GetGUIDLow()] = nil
+    if not req or now() - req.t > 120 then return msg(player, "Запрос устарел.") end
+    local from = GetPlayerByName(req.from)
+    if not from then return msg(player, "Игрок уже не в сети.") end
+    local fst = S[from:GetGUIDLow()]
+    local a = SOCIAL_BY_KEY[req.act]
+    if not fst or not a then return end
+    if from:GetDistance(player) > 15 then return msg(player, "Вы слишком далеко друг от друга.") end
+    if not a.ask and not yes then
+        msg(from, player:GetName() .. " отказывается: «" .. a.name .. "».")
+        return msg(player, "Вы отказались.")
+    end
+    resolveSocial(from, fst, player, a, yes)
+    msg(player, yes and "Вы согласились." or "Вы отказались.")
+    if yes and a.status then
+        local myst = S[player:GetGUIDLow()]
+        if myst then changeRelation(player, myst, "P" .. from:GetGUIDLow(), from:GetName(), 10, 10) end
+    end
+end
+
+-- старые текстовые эмоции тоже работают
+TX.EMOTE_MAP = {
+    [TE.WAVE] = "talk", [TE.HELLO] = "talk", [TE.GREET] = "talk", [TE.THANK] = "compliment", [TE.APPLAUD] = "compliment",
+    [TE.BOW] = "talk", [TE.INTRODUCE] = "talk", [TE.PRAISE] = "compliment", [TE.COMFORT] = "hug", [TE.SOOTHE] = "hug",
+    [TE.LAUGH] = "joke", [TE.TICKLE] = "joke", [TE.HUG] = "hug", [TE.KISS] = "kiss", [TE.CUDDLE] = "hug", [TE.SEXY] = "flirt",
+    [TE.RUDE] = "insult", [TE.SLAP] = "slap", [TE.INSULT] = "insult", [TE.SPIT] = "insult", [TE.CHICKEN] = "argue",
+    [TE.TAUNT] = "argue", [TE.BONK] = "argue",
+}
+TX.SELF_FUN = { [TE.DANCE] = 6, [TE.LAUGH] = 3, [TE.CHEER] = 3 }
+
+local function onTextEmote(event, player, textEmote, emoteNum, guid)
+    if isBot(player) then return end
+    local st = S[player:GetGUIDLow()]
+    if not st then return end
+    if textEmote == TE.SLEEP then
+        if player:IsInCombat() then return end
+        local bed = nearestSpot(player, st, 2.5, "bed")
+        if bed then FURN_ACTION.bed(player, st, spotObj(bed)); return sendHud(player, st) end
+        player:SetStandState(3)
+        st.sleeping = "floor"
+        msg(player, "Вы улеглись спать. В кровати сон вдвое полезнее.")
+        return sendHud(player, st)
+    end
+    local fun = TX.SELF_FUN[textEmote]
+    if fun and not cooldown(st, "selffun", 10) then
+        if textEmote == TE.DANCE and hasTrait(st, "party") then fun = fun * 2 end
+        add(st, "fun", fun)
+        if textEmote == TE.DANCE then F.skillGain(player, st, "dancing", 12) end
+    end
+    local act = TX.EMOTE_MAP[textEmote]
+    local t = player:GetSelection()
+    if act and t and (t:GetTypeId() == 3 or t:GetTypeId() == 4) and not (t:GetTypeId() == 4 and t:GetGUIDLow() == player:GetGUIDLow())
+        and player:GetDistance(t) <= 8 then
+        local a = SOCIAL_BY_KEY[act]
+        -- эмоции не запускают «серьёзные» действия и запросы согласия
+        if a and not a.consent and not a.ask and not a.cost then
+            local key = keyOf(t)
+            if not cooldown(st, "emote_" .. key, 10) and (st.gm.fast or not cooldown(st, "soc_" .. key .. "_" .. a.key, CFG.SOCIAL_CD[a.key] or 60)) then
+                rememberLook(st, key, t)
+                local err = checkSocial(player, st, a, key, getRel(st, key, nameOf(st, t)), t)
+                if err then
+                    changeRelation(player, st, key, t:GetName(), -2, 0)
+                    react(player, t, "awkward", EMOTE.NO)
+                else
+                    resolveSocial(player, st, t, a, true)
+                end
+            end
+        end
+    end
+    sendHud(player, st)
+end
+
+------------------------------------------------------------------------
+-- ТИК
+------------------------------------------------------------------------
+local function tickKids(player, st, dt)
+    local map = player:GetMap()
+    local sad = false
+    for _, k in ipairs(st.kids) do
+        local mode = st.kidsOut[k.id] and st.kmode[k.id]
+        if mode == "follow" then
+            k.happy = clamp(k.happy + 3 * dt, 0, 100)
+        elseif mode == "home" then
+            k.happy = clamp(k.happy + 1.5 * dt, 0, 100)
+        else
+            k.happy = clamp(k.happy - CFG.KID_HAPPY_DECAY * dt, 0, 100)
+        end
+        if k.happy < 25 then sad = true end
+    end
+    if sad and not st.warn.kids then st.warn.kids = true; msg(player, "|cffffb040Ваши дети скучают. Зайдите домой или позовите их и поиграйте с ними.|r") end
+    if not sad then st.warn.kids = nil end
+    return sad
+end
+
+------------------------------------------------------------------------
+-- ДОМА: «СТЕНЫ ВНИЗ», КАК В СИМС
+------------------------------------------------------------------------
+local function setHouseHidden(player, r, hidden)
+    if (r.hidden or false) == hidden then return end
+    local go
+    if r.hguid then go = player:GetMap():GetWorldObject(r.hguid) end
+    if not go and hidden then go = findWorldObject(player, r) end
+    if not go then r.hidden = nil; return end
+    r.hguid = go:GetGUID()
+    go:SetPhaseMask(hidden and 2 or 1, true)
+    r.hidden = hidden or nil
+end
+
+local function tickWalls(player, st)
+    local x, y = player:GetLocation()
+    local anyInside = false
+    for _, r in ipairs(st.furn) do
+        local it = ITEM_BY_ENTRY[r.entry]
+        if it and it.kind == "house" then
+            local inside = r.map == player:GetMapId() and dist2(x, y, r.x, r.y) <= (it.r or 12)
+            if inside then anyInside = true end
+            -- «авто»: дом не прячем — камера сверху опускается под потолок (крышу не видно, стены и пол на месте)
+            local want = false   -- 1.0: дом и мебель никогда не прячутся (смена камеры ничего не скрывает)
+            setHouseHidden(player, r, want and true or false)
+        end
+    end
+    if (st.inside or false) ~= anyInside then
+        st.inside = anyInside
+        send(player, "IN;" .. (anyInside and (st.walls == "up" and 2 or 1) or 0))
+    end
+end
+
+local function showAllHouses(player, st)
+    for _, r in ipairs(st.furn) do if r.hidden then setHouseHidden(player, r, false) end end
+end
+showAllHousesRef = showAllHouses
+
+------------------------------------------------------------------------
+-- ЖИВОЙ МИР: NPC ВОКРУГ ИГРОКА
+------------------------------------------------------------------------
+local LIFE = {}            -- guidLow существа -> состояние
+local REAL_SPOUSE_REF = {} -- entry настоящих NPC-супругов (заполняется ниже)
+local LIFE_OFF = false
+TX.LIFE_TALKS = {
+    { "Слышал новости?", "Какие ещё новости?", "Говорят, Король-лич опять что-то затевает.", "Ох, лишь бы не у нас..." },
+    { "Цены на хлеб опять выросли.", "И не говори. Скоро будем есть одну репу.", "Зато репа полезная!" },
+    { "Видел, $N обзавёлся(ась) хозяйством?", "Да, говорят, дом себе прикупил(а).", "Вот бы и мне так..." },
+    { "Как твоя семья?", "Младший опять залез на крышу.", "Весь в отца!", "Это точно." },
+    { "Погода сегодня чудесная.", "Только бы дождя не было.", "Да какой дождь, ни облачка!" },
+    { "Ты пробовал(а) похлёбку в таверне?", "Пробовал(а). Лучше бы не пробовал(а).", "Ха-ха! Повар опять напутал со специями." },
+    { "Ночью кто-то выл в лесу.", "Это волки. Или ворген...", "Не пугай меня так!" },
+    { "Мне снился дракон.", "Красный или чёрный?", "Не помню. Но он просил пирожок." },
+    { "Работы невпроворот.", "Отдыхать тоже надо.", "Вот закончу — и сразу в таверну." },
+    { "Ты слышал(а), как поёт бард у фонтана?", "Слышал(а). Медведь на ухо наступил.", "Зато громко!" },
+    { "Эх, вот бы отпуск на Кабестан...", "Там же пираты.", "Пираты тоже люди. Ну, гоблины." },
+    { "Здравствуй, сосед!", "И тебе не хворать!", "Заходи вечером на чай.", "Обязательно!" },
+}
+TX.LIFE_SOLO = {
+    "Хорошая сегодня погода.", "Пора бы перекусить...", "Ох, спина моя, спина.", "Где же я оставил(а) ключи?",
+    "Так, что я хотел(а) сделать?", "*напевает песенку*", "*зевает*", "Надо бы заглянуть на рынок.",
+}
+TX.LIFE_NIGHT = { "*храпит*", "Zzz...", "*бормочет во сне*" }
+TX.LIFE_HAWK = { "Подходите, не стесняйтесь!", "Лучшие товары в городе!", "Свежий завоз, только сегодня!", "Чем могу помочь, $N?",
+    "Эй, путник! Загляни ко мне!", "*протирает прилавок*", "Ох, и работы сегодня..." }
+TX.LIFE_BYE = { "Поздно уже, пойду домой.", "Всё, домой, спать.", "Спокойной ночи, $N!", "*зевает* Пора на боковую." }
+TX.LIFE_MORNING = { "Доброе утро!", "*потягивается*", "Ну, новый день!" }
+local LIFE_HIDDEN = {}     -- NPC, ушедшие «домой» на ночь: guidLow -> { guid, map, inst }
+local CHAIR_ENTRIES = {}   -- стулья и скамьи мира (gameobject type 7)
+local CHAIR_TAKEN = {}
+TX.LIFE_GREET_FRIEND = { "Привет, $N! Рад тебя видеть!", "О, $N! Как поживаешь?", "$N! Заходи как-нибудь в гости!" }
+TX.LIFE_GREET = { "Добрый день.", "Здравствуйте, $N.", "Хорошего дня!" }
+TX.LIFE_EMOTES = { EAT = 7, DANCE = 10, WORK = 28, USE = 69, TALK = 1, WAVE = 3, LAUGH = 11 }
+
+-- Eluna нельзя хранить объект карты между тиками (он становится недействительным) — храним номер карты
+function F.mapRef(player)
+    local id, inst = player:GetMapId(), player:GetInstanceId()
+    return { GetWorldObject = function(_, guid)
+        local m = GetMapById(id, inst)
+        return m and m:GetWorldObject(guid)
+    end }
+end
+
+function F.lifeOK(c)
+    if not c or c:GetTypeId() ~= 3 then return false end
+    if LIFE[c:GetGUIDLow()] or LIFE_HIDDEN[c:GetGUIDLow()] then return false end
+    if c:GetPhaseMask() ~= 1 or REAL_SPOUSE_REF[c:GetEntry()] then return false end
+    if c:IsDead() or c:IsInCombat() or c:IsInEvadeMode() then return false end
+    if KID_ENTRIES[c:GetEntry()] or SPOUSE_ENTRIES[c:GetEntry()] or c:GetEntry() == CFG.NPC_ENTRY then return false end
+    if c:GetCreatureType() ~= 7 then return false end        -- только гуманоиды
+    if c:IsTrigger() or c:IsWorldBoss() or c:IsGuard() then return false end
+    if c:GetDefaultMovementType() == 2 then return false end  -- патрули по маршруту не трогаем
+    if c:GetSpawnId() == 0 then return false end              -- временные существа
+    local f = c:GetNPCFlags()
+    -- торговцы, тренеры, квестодатели не уходят с места: зазывают, работают, болтают с соседями
+    if f ~= 0 and f ~= 1 then return "fixed" end
+    return "free"
+end
+
+function F.lifeSay(c, text, player)
+    if player then text = text:gsub("%$N", player:GetName()) end
+    F.say(c, text, 0)
+end
+
+function F.lifeReset(c)
+    c:SetStandState(0)
+    c:EmoteState(0)
+end
+
+function F.lifeEnd(guidLow, s, map)
+    LIFE[guidLow] = nil
+    if s.chairLow then CHAIR_TAKEN[s.chairLow] = nil end
+    local c = map and map:GetWorldObject(s.guid)
+    if not c then return end
+    F.lifeReset(c)
+    if not c:IsInCombat() then c:MoveHome() end
+end
+
+function F.lifeStart(player, c, others, fixed)
+    local hx, hy, hz, ho = c:GetHomePosition()
+    if not hx then hx, hy, hz, ho = c:GetLocation() end
+    local s = { guid = c:GetGUID(), map = F.mapRef(player), t = now(), hx = hx, hy = hy, hz = hz, ho = ho }
+    local roll = math.random()
+    pcall(c.SetWalk, c, true)                                -- по городу ходят шагом, а не бегом
+    if fixed then
+        if roll < 0.45 then
+            s.act = "hawk"; s.till = now() + math.random(20, 40)
+            c:PerformEmote(TX.LIFE_EMOTES.TALK)
+            F.lifeSay(c, pick(TX.LIFE_HAWK), player)
+        elseif roll < 0.75 then
+            s.act = "work"; s.till = now() + math.random(20, 45)
+            c:EmoteState(math.random() < 0.5 and 173 or TX.LIFE_EMOTES.USE)
+        else
+            local o
+            for _, x in ipairs(others) do if c:GetDistance(x) < 6 then o = x; break end end
+            if not o then return end
+            s.act = "chat"; s.partner = o:GetGUID(); s.lines = pick(TX.LIFE_TALKS); s.li = 0
+            s.till = now() + 20 + #s.lines * 6; s.phase_at = now() + 1
+            LIFE[o:GetGUIDLow()] = { guid = o:GetGUID(), map = s.map, act = "chatB", t = now(), till = s.till + 2, leader = c:GetGUIDLow() }
+        end
+        LIFE[c:GetGUIDLow()] = s
+        return
+    end
+    local night = isNight()
+    if night or (isEvening() and roll < 0.35) then
+        -- вечер и ночь: NPC расходятся по домам, кто-то садится на скамейку или дремлет
+        local r2 = math.random()
+        if r2 < (night and 0.65 or 0.55) then
+            local px, py = player:GetLocation()
+            local cx, cy, cz = c:GetLocation()
+            local ang = atan2(cy - py, cx - px) + (math.random() - 0.5)
+            local dd = math.random(14, 24)
+            s.act = "gohome"; s.till = now() + 45; s.phase_at = now() + math.max(6, dd / 2.5)
+            c:MoveTo(1, cx + math.cos(ang) * dd, cy + math.sin(ang) * dd, cz)
+            if math.random() < 0.4 then F.lifeSay(c, pick(TX.LIFE_BYE), player) end
+            LIFE[c:GetGUIDLow()] = s
+            return
+        elseif r2 < 0.85 then
+            local best, bd
+            for _, go in ipairs(c:GetGameObjectsInRange(25) or {}) do
+                if CHAIR_ENTRIES[go:GetEntry()] and not CHAIR_TAKEN[go:GetGUIDLow()] then
+                    local d = c:GetDistance(go)
+                    if not bd or d < bd then best, bd = go, d end
+                end
+            end
+            if best then
+                local gx, gy, gz, go_o = best:GetLocation()
+                s.act = "chair"; s.till = now() + math.random(90, 200); s.chair = { gx, gy, gz, go_o }
+                s.chairLow = best:GetGUIDLow(); CHAIR_TAKEN[s.chairLow] = c:GetGUIDLow()
+                s.phase_at = now() + math.max(3, bd / 2.5)
+                c:MoveTo(1, gx, gy, gz)
+                LIFE[c:GetGUIDLow()] = s
+                return
+            end
+        end
+        if night then
+            s.act = "sleep"; s.till = now() + math.random(120, 300)
+            c:SetStandState(3)
+            LIFE[c:GetGUIDLow()] = s
+            return
+        end
+    end
+    if isEvening() and roll < 0.55 then
+        s.act = "dance"; s.till = now() + math.random(40, 90)
+        c:EmoteState(TX.LIFE_EMOTES.DANCE)
+        if math.random() < 0.5 then F.lifeSay(c, pick({ "Музыка! Танцуем!", "Эх, раз, ещё раз!", "Вечер — время веселья!" })) end
+    elseif roll < 0.35 and #others > 0 then
+        -- разговор двух NPC
+        local o = table.remove(others, math.random(#others))
+        local ox, oy, oz = o:GetLocation()
+        local cx, cy = c:GetLocation()
+        local mx, my = (cx + ox) / 2, (cy + oy) / 2
+        local ang = atan2(oy - cy, ox - cx)
+        local talk = pick(TX.LIFE_TALKS)
+        s.act = "chat"; s.partner = o:GetGUID(); s.lines = talk; s.li = 0
+        s.till = now() + 25 + #talk * 8
+        s.phase_at = now() + math.max(3, dist2(cx, cy, mx, my) / 2.5)
+        c:MoveTo(1, mx - math.cos(ang) * 1.2, my - math.sin(ang) * 1.2, (hz + oz) / 2)
+        o:MoveTo(1, mx + math.cos(ang) * 1.2, my + math.sin(ang) * 1.2, (hz + oz) / 2)
+        local ohx, ohy, ohz, oho = o:GetHomePosition()
+        LIFE[o:GetGUIDLow()] = { guid = o:GetGUID(), map = s.map, act = "chatB", t = now(), till = s.till + 2, leader = c:GetGUIDLow() }
+    elseif roll < 0.52 then
+        -- прогулка: идёт куда-то за 15–35 м (к скамейке, к соседу или просто по улице), стоит там и возвращается
+        local cx, cy, cz = c:GetLocation()
+        local tx, ty, tz
+        for _, go in ipairs(c:GetGameObjectsInRange(35) or {}) do
+            if CHAIR_ENTRIES[go:GetEntry()] and not CHAIR_TAKEN[go:GetGUIDLow()] and c:GetDistance(go) > 10 and math.random() < 0.3 then
+                tx, ty, tz = go:GetLocation(); break
+            end
+        end
+        if not tx then
+            local a, d = math.random() * 2 * math.pi, math.random(15, 35)
+            tx, ty, tz = hx + math.cos(a) * d, hy + math.sin(a) * d, hz
+        end
+        s.act = "stroll"; s.tx, s.ty = tx, ty; s.till = now() + 90; s.phase_at = now() + 50
+        c:MoveTo(1, tx, ty, tz)
+        if math.random() < 0.3 then F.lifeSay(c, pick(TX.LIFE_SOLO), player) end
+    elseif roll < 0.6 then
+        s.act = "wander"; s.till = now() + math.random(25, 50)
+        local a, d = math.random() * 2 * math.pi, math.random(4, 10)
+        c:MoveTo(1, hx + math.cos(a) * d, hy + math.sin(a) * d, hz)
+        if math.random() < 0.3 then F.lifeSay(c, pick(TX.LIFE_SOLO), player) end
+    elseif roll < 0.68 then
+        s.act = "sit"; s.till = now() + math.random(40, 90)
+        c:SetStandState(1)
+    elseif roll < 0.80 then
+        s.act = "work"; s.till = now() + math.random(30, 60)
+        c:EmoteState(math.random() < 0.5 and TX.LIFE_EMOTES.WORK or TX.LIFE_EMOTES.USE)
+    elseif roll < 0.90 then
+        s.act = "eat"; s.till = now() + math.random(30, 50)
+        c:SetStandState(1)
+    else
+        -- подойти поздороваться с игроком
+        local px, py, pz = player:GetLocation()
+        if player:IsMoving() or player:GetDistance(c) > 20 then return end
+        s.act = "greet"; s.till = now() + 20; s.player = player:GetGUIDLow()
+        local ang = atan2(py - hy, px - hx)
+        c:MoveTo(1, px - math.cos(ang) * 2, py - math.sin(ang) * 2, pz)
+        s.phase_at = now() + math.max(3, player:GetDistance(c) / 2.5)
+    end
+    LIFE[c:GetGUIDLow()] = s
+end
+
+function F.lifeStep()
+    local tnow = now()
+    for low, s in pairs(LIFE) do
+        local c = s.map and s.map:GetWorldObject(s.guid)
+        if not c or c:IsDead() then
+            LIFE[low] = nil
+        elseif c:IsInCombat() then
+            LIFE[low] = nil
+        elseif s.act == "chatB" then
+            if tnow >= s.till or not LIFE[s.leader] then F.lifeEnd(low, s, s.map) end
+        elseif s.act == "gohome" then
+            if tnow >= s.phase_at or not c:IsMoving() and tnow >= s.phase_at - 2 then
+                -- зашёл «домой»: невидим до утра
+                c:SetPhaseMask(2, true)
+                LIFE[low] = nil
+                LIFE_HIDDEN[low] = { guid = s.guid, map = c:GetMapId(), inst = c:GetInstanceId() }
+            end
+        elseif tnow >= s.till then
+            F.lifeEnd(low, s, s.map)
+        elseif s.act == "stroll" then
+            local cx, cy = c:GetLocation()
+            if not s.there and (dist2(cx, cy, s.tx, s.ty) < 2 or tnow >= s.phase_at) then
+                s.there = true
+                s.till = tnow + math.random(10, 25)
+                c:PerformEmote(pick({ TX.LIFE_EMOTES.TALK, 0, 0 }) or 0)
+                if math.random() < 0.4 then F.lifeSay(c, pick(TX.LIFE_SOLO)) end
+            end
+        elseif s.act == "hawk" then
+            if math.random() < 0.12 then c:PerformEmote(TX.LIFE_EMOTES.TALK); F.lifeSay(c, pick(TX.LIFE_HAWK)) end
+        elseif s.act == "chair" then
+            if not s.seated and tnow >= s.phase_at then
+                s.seated = true
+                local ch = s.chair
+                c:NearTeleport(ch[1], ch[2], ch[3], ch[4])
+                c:SetStandState(5)
+            elseif s.seated and math.random() < 0.06 then
+                if isNight() then F.lifeSay(c, pick(TX.LIFE_NIGHT)) else c:PerformEmote(math.random() < 0.5 and TX.LIFE_EMOTES.EAT or TX.LIFE_EMOTES.TALK) end
+            end
+        elseif s.act == "chat" then
+            local o = s.map:GetWorldObject(s.partner)
+            if not o then F.lifeEnd(low, s, s.map)
+            elseif tnow >= (s.phase_at or 0) then
+                c:SetFacingToObject(o); o:SetFacingToObject(c)
+                s.li = s.li + 1
+                local line = s.lines[s.li]
+                if line then
+                    local who = (s.li % 2 == 1) and c or o
+                    F.say(who, (line:gsub("%$N", s.pname or "этот приезжий")), 0)
+                    who:PerformEmote(math.random() < 0.8 and TX.LIFE_EMOTES.TALK or TX.LIFE_EMOTES.LAUGH)
+                    s.phase_at = tnow + 6
+                elseif s.li > #s.lines + 1 then
+                    s.till = tnow
+                end
+            end
+        elseif s.act == "eat" then
+            if math.random() < 0.2 then c:PerformEmote(TX.LIFE_EMOTES.EAT) end
+        elseif s.act == "sleep" then
+            if math.random() < 0.05 then F.lifeSay(c, pick(TX.LIFE_NIGHT)) end
+        elseif s.act == "greet" and not s.done and tnow >= (s.phase_at or 0) then
+            s.done = true
+            local p
+            for _, pl in ipairs(GetPlayersInWorld() or {}) do if pl:GetGUIDLow() == s.player then p = pl end end
+            if p then
+                c:SetFacingToObject(p)
+                c:PerformEmote(TX.LIFE_EMOTES.WAVE)
+                local st = S[p:GetGUIDLow()]
+                local r = st and st.rel["C" .. c:GetEntry()]
+                F.lifeSay(c, pick((r and r.f >= 20) and TX.LIFE_GREET_FRIEND or TX.LIFE_GREET), p)
+                if st then add(st, "social", 2) end
+            end
+        end
+    end
+end
+
+local FIXED = {}
+function F.tickLife(player, st)
+    if LIFE_OFF or not CFG.LIFE_ENABLED or not inOpenWorld(player) then return end
+    local list = player:GetCreaturesInRange(CFG.LIFE_RADIUS, 0, 2, 1) or {}
+    local busy, free = 0, {}
+    for _, c in ipairs(list) do
+        if LIFE[c:GetGUIDLow()] then busy = busy + 1
+        else
+            local ok = F.lifeOK(c)
+            if ok then free[#free + 1] = c; FIXED[c:GetGUIDLow()] = (ok == "fixed") or nil end
+        end
+    end
+    local i = 0
+    while busy < CFG.LIFE_MAX_ACTIVE and #free > 0 and i < 6 do
+        i = i + 1
+        local c = table.remove(free, math.random(#free))
+        if math.random() < CFG.LIFE_START_CHANCE then
+            local others = {}
+            local cx, cy = c:GetLocation()
+            for _, o in ipairs(free) do
+                local ox, oy = o:GetLocation()
+                if dist2(cx, cy, ox, oy) < 15 then others[#others + 1] = o end
+            end
+            F.lifeStart(player, c, others, FIXED[c:GetGUIDLow()])
+            local s = LIFE[c:GetGUIDLow()]
+            if s then
+                s.pname = player:GetName()
+                busy = busy + 1
+                if s.act == "chat" then
+                    for k = #free, 1, -1 do if LIFE[free[k]:GetGUIDLow()] then table.remove(free, k) end end
+                    busy = busy + 1
+                end
+                dbg(player, st, c:GetName() .. ": " .. s.act)
+            end
+        end
+    end
+end
+
+-- утром ушедшие домой NPC выходят обратно
+function F.tickHidden(all)
+    if not all and (isNight() or isEvening()) then return end
+    for low, h in pairs(LIFE_HIDDEN) do
+        if all or math.random() < 0.25 then
+            LIFE_HIDDEN[low] = nil
+            local map = GetMapById(h.map, h.inst)
+            local c = map and map:GetWorldObject(h.guid)
+            if c then
+                c:SetPhaseMask(1, true)
+                c:SetStandState(0)
+                if not all then
+                    c:MoveHome()
+                    if math.random() < 0.3 then F.say(c, pick(TX.LIFE_MORNING), 0) end
+                end
+            end
+        end
+    end
+end
+
+function F.lifeStopAll()
+    for low, s in pairs(LIFE) do pcall(F.lifeEnd, low, s, s.map) end
+    LIFE = {}
+    pcall(F.tickHidden, true)
+    CHAIR_TAKEN = {}
+end
+
+------------------------------------------------------------------------
+-- ДОМ И СЕМЬЯ: распорядок супруга и детей
+------------------------------------------------------------------------
+TX.SPOUSE_LINES = {
+    arrive = { "Я дома!", "Ну вот я и вернулся(ась).", "Фух, ну и денёк был." },
+    greet  = { "С возвращением, $N!", "Я так скучал(а) по тебе, $N!", "$N, ужин почти готов!" },
+    cook   = { "Сейчас приготовлю что-нибудь вкусное.", "Кто съел последний пирожок?!", "Мм, пахнет отлично!" },
+    read   = { "Интересная книга...", "Ты читал(а) это?", "*листает страницы*" },
+    sit    = { "Как хорошо дома.", "Посижу немного.", "Уютно у нас." },
+    eat    = { "Приятного аппетита!", "Вкусно получилось.", "Добавки?" },
+    bed    = { "Пора спать. Спокойной ночи, $N.", "Я спать. Не засиживайся допоздна!", "*зевает* Всё, в кровать." },
+    sleep  = { "*сладко спит*", "Zzz...", "*бормочет во сне*" },
+    morning= { "Доброе утро, $N!", "*потягивается* Уже утро?", "Кто первый в умывальник?" },
+    talk   = { "Как прошёл день, $N?", "Может, сходим вечером в таверну?", "Дети опять разбросали игрушки.",
+               "Я тебя люблю, $N.", "Надо бы купить новый ковёр.", "Ты сегодня какой-то задумчивый(ая)." },
+    kids   = { "Дети, не шумите!", "Кто хочет пирожок?", "Осторожно, не упади!", "Ну-ка, все мыть руки!" },
+    work   = { "Мне пора на работу. Вернусь вечером!", "Всё, побежал(а) на работу.", "До вечера, $N!" },
+    offwork= { "Всё, смена окончена — иду домой!", "На сегодня хватит. Домой!", "Пора домой, к семье." },
+    onwork = { "Снова за работу.", "Доброе утро! Работа ждёт.", "Ну, приступим." },
+}
+TX.KID_PLAY_LINES = { "Догоняй!", "Ты водишь!", "Чур, я рыцарь!", "Давай играть в драконов!", "Ха-ха, не поймаешь!",
+    "Прятки! Раз, два, три...", "Смотри, что я нашёл(ла)!", "Давай строить замок!", "Я — Король-лич! Ууу!" }
+TX.KID_PLAY_REPLY = { "Ха-ха!", "Не догонишь!", "Ладно, давай!", "Я первый(ая)!", "Ну погоди!" }
+TX.KID_TOY_LINES = { "Вжжж!", "Мой грифон летит!", "*играет с игрушкой*", "Бах-бах!", "Смотрите, как я умею!" }
+TX.KID_BED_LINES = { "Спокойной ночи!", "Почитаете сказку?..", "Ну можно ещё пять минуточек?", "*зевает*" }
+TX.KID_SLEEP_LINES = { "*сопит*", "Zzz...", "*ворочается во сне*" }
+TX.KID_MORNING = { "Доброе утро!", "Уже утро? Ура!", "*зевает*", "Что на завтрак?" }
+
+local REAL_SPOUSE = REAL_SPOUSE_REF   -- entry настоящих NPC-супругов (их не трогает «живой мир»)
+local TWIN_GOSSIP = {}   -- для каких entry зарегистрировано меню супруга дома
+local onSpouseHello, onSpouseSelect
+
+-- мебель у дома нужного вида
+function F.homeFurn(st, kinds)
+    local list = {}
+    if not st.home then return list end
+    for _, r in ipairs(st.furn) do
+        local it = ITEM_BY_ENTRY[r.entry]
+        if it and r.map == st.home[1] and dist2(r.x, r.y, st.home[2], st.home[3]) <= 35 then
+            for _, k in ipairs(kinds) do
+                if (k == "seat" and it.seat) or it.kind == k then list[#list + 1] = r; break end
+            end
+        end
+    end
+    -- встроенная мебель готового дома (метки)
+    for _, r in ipairs(st.spots or {}) do
+        if r.map == st.home[1] and dist2(r.x, r.y, st.home[2], st.home[3]) <= 45 then
+            for _, k in ipairs(kinds) do
+                if r.kind == k then list[#list + 1] = { id = 1000000 + r.id, x = r.x, y = r.y, z = r.z, o = r.o, kind = r.kind }; break end
+            end
+        end
+    end
+    return list
+end
+function F.furnKind(r)
+    if r.kind then return r.kind end
+    local it = ITEM_BY_ENTRY[r.entry]
+    return it and (it.seat and "seat" or it.kind)
+end
+function F.homeSpot(st, kinds) local l = F.homeFurn(st, kinds); return #l > 0 and pick(l) or nil end
+
+-- кровати: первая — вам и супругу, остальные — детям по старшинству
+function F.bedFor(st, who)
+    local beds = F.homeFurn(st, { "bed" })
+    table.sort(beds, function(a, b) return a.id < b.id end)
+    if who == "S" then return beds[1] end
+    local i = 1
+    for _, k in ipairs(st.kids) do
+        if st.kmode[k.id] == "home" then
+            i = i + 1
+            if "K" .. k.id == who then return beds[i] end
+        end
+    end
+    return nil
+end
+
+function F.arrived(c, p)
+    local cx, cy = c:GetLocation()
+    return dist2(cx, cy, p.x, p.y) <= 1.8 or now() >= p.deadline
+end
+
+------------------------------------------------------------------------
+-- дети дома
+------------------------------------------------------------------------
+function F.otherPlaymate(player, st, k, c)
+    local list = {}
+    for _, o in ipairs(st.kids) do
+        if o.id ~= k.id and st.kmode[o.id] == "home" and kidStage(o) >= 2 and kidStage(o) <= 4 then
+            local oc = kidObj(player, st, o)
+            local oa = st.kai[o.id]
+            if oc and oa and not oa.sleeping and not oa.pending then list[#list + 1] = { c = oc, k = o } end
+        end
+    end
+    -- соседские дети тоже годятся
+    for _, n in ipairs(c:GetCreaturesInRange(30, 0, 0, 1) or {}) do
+        if isChildUnit(n) and not KIDS_BY_LOW[n:GetGUIDLow()] and not n:IsInCombat() and n:GetPhaseMask() == 1 then
+            list[#list + 1] = { c = n }
+        end
+    end
+    return #list > 0 and pick(list) or nil
+end
+
+function F.kidDo(player, st, k, c, a, p, stg)
+    local tnow = now()
+    if p.kind == "bed" then
+        c:NearTeleport(p.x, p.y, p.z + 0.6, p.o); c:SetStandState(3); a.sleeping = true
+    elseif p.kind == "floor" then
+        c:SetStandState(3); a.sleeping = true
+    elseif p.kind == "play" then
+        local o = player:GetMap():GetWorldObject(p.with)
+        if o then
+            c:SetFacingToObject(o)
+            c:PerformEmote(pick({ EMOTE.LAUGH, EMOTE.CHEER, EMOTE.TALK }))
+            kidSay(c, k, pick(TX.KID_PLAY_LINES))
+            local oinfo = KIDS_BY_LOW[o:GetGUIDLow()]
+            local ok = oinfo and nil
+            for _, x in ipairs(st.kids) do if oinfo and x.id == oinfo.cid then ok = x end end
+            local oa = ok and st.kai[ok.id]
+            if oa then oa.pending = nil; oa.till = tnow + 12; oa.play = true end
+            if not o:IsMoving() then o:SetFacingToObject(c) end
+            o:PerformEmote(EMOTE.LAUGH)
+            if ok then kidSay(o, ok, pick(TX.KID_PLAY_REPLY)) else F.say(o, pick(TX.KID_PLAY_REPLY), 0) end
+            k.happy = clamp(k.happy + 2, 0, 100)
+            if ok then ok.happy = clamp(ok.happy + 2, 0, 100) end
+            -- побегать вместе
+            local hx, hy, hz = st.home[2], st.home[3], st.home[4]
+            local ang = math.random() * 2 * math.pi
+            walkTo(c, hx + math.cos(ang) * 6, hy + math.sin(ang) * 6, hz)
+            if ok and o.MoveTo then walkTo(o, hx + math.cos(ang + 0.4) * 5, hy + math.sin(ang + 0.4) * 5, hz) end
+        end
+        a.till = tnow + 10; a.play = true
+        return
+    elseif p.kind == "toy" then
+        c:SetFacing(p.o); c:EmoteState(TX.LIFE_EMOTES.USE)
+        kidSay(c, k, pick(TX.KID_TOY_LINES))
+        k.happy = clamp(k.happy + 2, 0, 100)
+    elseif p.kind == "read" then
+        c:SetStandState(1); kidSay(c, k, pick({ "*читает книжку*", "А тут про драконов!", "*листает картинки*" }))
+        k.skill = clamp(k.skill + 0.5, 0, 100)
+    elseif p.kind == "eat" then
+        c:SetStandState(1); c:PerformEmote(TX.LIFE_EMOTES.EAT)
+    elseif p.kind == "parent" then
+        c:SetFacingToObject(player); c:PerformEmote(EMOTE.TALK)
+        kidSay(c, k, (pick(TX.KID_LINES[stg]):gsub("Мама! Папа!", parentWord(player) .. "!")))
+        local s = S[player:GetGUIDLow()]
+        if s then add(s, "social", 2) end
+    end
+    a.till = tnow + math.random(10, 20)
+end
+
+function F.kidStep(player, st, k, c, d)
+    local a = st.kai[k.id]
+    if not a then a = { till = 0 }; st.kai[k.id] = a end
+    local stg = applyKidLook(c, k)
+    local tnow = now()
+    if a.pending then
+        if not F.arrived(c, a.pending) then return end
+        local p = a.pending
+        a.pending = nil
+        return F.kidDo(player, st, k, c, a, p, stg)
+    end
+    if a.sleeping then
+        if isNight() then
+            if math.random() < 0.05 then kidSay(c, k, pick(TX.KID_SLEEP_LINES)) end
+            return
+        end
+        a.sleeping = nil
+        c:SetStandState(0)
+        kidSay(c, k, pick(TX.KID_MORNING))
+        a.till = tnow + 4
+        return
+    end
+    if tnow < a.till then
+        if a.play and math.random() < 0.25 then c:PerformEmote(pick({ EMOTE.LAUGH, EMOTE.CHEER })) end
+        return
+    end
+    a.play = nil
+    c:SetStandState(0); c:EmoteState(0)
+    local hx, hy, hz = st.home[2], st.home[3], st.home[4]
+    if isNight() then
+        local b = F.bedFor(st, "K" .. k.id)
+        if b then
+            a.pending = { kind = "bed", x = b.x, y = b.y, z = b.z, o = b.o, deadline = tnow + 25 }
+        else
+            local ang = math.random() * 2 * math.pi
+            a.pending = { kind = "floor", x = hx + math.cos(ang) * 2.5, y = hy + math.sin(ang) * 2.5, z = hz, deadline = tnow + 20 }
+        end
+        walkTo(c, a.pending.x, a.pending.y, a.pending.z)
+        if math.random() < 0.5 then kidSay(c, k, pick(TX.KID_BED_LINES)) end
+        return
+    end
+    if stg == 1 then
+        c:SetStandState(1)
+        if math.random() < 0.3 then kidSay(c, k, pick(TX.KID_LINES[1])) end
+        a.till = tnow + math.random(15, 30)
+        return
+    end
+    local roll = math.random()
+    local p
+    if roll < 0.35 and stg <= 4 then
+        local m = F.otherPlaymate(player, st, k, c)
+        if m then
+            local ox, oy, oz = m.c:GetLocation()
+            p = { kind = "play", x = ox, y = oy, z = oz, with = m.c:GetGUID(), deadline = tnow + 15 }
+            walkTo(c, ox + 1.2, oy + 0.8, oz)
+            p.x, p.y = ox + 1.2, oy + 0.8
+        end
+    end
+    if not p and roll < 0.5 then
+        local t = F.homeSpot(st, { "toy" })
+        if t then p = { kind = "toy", x = t.x + math.cos(t.o) * 1.2, y = t.y + math.sin(t.o) * 1.2, z = t.z, o = (t.o + math.pi) % (2 * math.pi), deadline = tnow + 20 } end
+    end
+    if not p and roll < 0.62 and stg >= 3 then
+        local b = F.homeSpot(st, { "books", "seat" })
+        if b then p = { kind = "read", x = b.x, y = b.y, z = b.z, deadline = tnow + 20 } end
+    end
+    if not p and roll < 0.72 then
+        local t = F.homeSpot(st, { "table", "picnic" })
+        if t then p = { kind = "eat", x = t.x + math.cos(t.o) * 1.1, y = t.y + math.sin(t.o) * 1.1, z = t.z, deadline = tnow + 20 } end
+    end
+    if not p and roll < 0.82 and d < 25 then
+        local px, py, pz = player:GetLocation()
+        p = { kind = "parent", x = px + 1.2, y = py + 0.6, z = pz, deadline = tnow + 12 }
+    end
+    if p then
+        if p.kind ~= "play" then walkTo(c, p.x, p.y, p.z) end
+        a.pending = p
+        return
+    end
+    -- просто бегает вокруг дома
+    local ang, r = math.random() * 2 * math.pi, math.random(2, 9)
+    walkTo(c, hx + math.cos(ang) * r, hy + math.sin(ang) * r, hz)
+    if math.random() < 0.25 then kidSay(c, k, pick(TX.KID_LINES[stg])) end
+    a.till = tnow + math.random(8, 16)
+end
+
+------------------------------------------------------------------------
+-- 5.0: ВЗРОСЛЫЕ ДЕТИ УЕЗЖАЮТ ЖИТЬ СВОЕЙ СЕМЬЁЙ
+------------------------------------------------------------------------
+TX.MOVED_LINES = { "Привет, $P! Как хорошо, что ты зашёл(ла)!", "Заходи, у нас как раз пирог!", "Мы тут обустроились, нравится?",
+    "Скучаю по дому, но здесь тоже хорошо.", "Передавай привет всем дома!" }
+TX.PARTNER_LINES = { "Рад(а) познакомиться!", "Вы, должно быть, родитель $K?", "Заходите почаще!", "Добро пожаловать в наш дом." }
+
+local IDCOL
+function F.creatureIdCol()
+    if not IDCOL then
+        IDCOL = WorldDBQuery("SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() "
+            .. "AND TABLE_NAME = 'creature' AND COLUMN_NAME = 'id1' LIMIT 1") and "id1" or "id"
+    end
+    return IDCOL
+end
+
+function F.kidAdultDays(k) return simDays(now() - k.born) - CFG.KID_STAGE_DAYS[#CFG.KID_STAGE_DAYS] end
+
+function F.saveMoved(k)
+    CharDBExecute(string.format("UPDATE character_sims_children SET moved = %d, mmap = %d, mx = %.3f, my = %.3f, mz = %.3f, "
+        .. "partner = '%s', place = '%s', stay = %d WHERE id = %d", k.moved and 1 or 0, k.mmap or -1, k.mx or 0, k.my or 0, k.mz or 0,
+        sqlEsc(k.partner or ""), sqlEsc(k.place or ""), k.stay and 1 or 0, k.id))
+end
+
+function F.despawnMoved(player, st, k)
+    local g = st.kpart and st.kpart[k.id]
+    if g then
+        local c = player:GetMap():GetWorldObject(g)
+        if c then c:DespawnOrUnsummon(0) end
+        st.kpart[k.id] = nil
+    end
+    despawnKid(player, st, k)
+end
+
+-- новый дом: таверна в другом городе на том же континенте
+function F.moveOut(player, st, k)
+    local map = st.home and st.home[1] or player:GetMapId()
+    local hx, hy = st.home and st.home[2] or 0, st.home and st.home[3] or 0
+    local q = WorldDBQuery(string.format("SELECT c.map, c.position_x, c.position_y, c.position_z, t.name FROM creature c "
+        .. "JOIN creature_template t ON t.entry = c.%s WHERE (t.npcflag & 65536) <> 0 AND c.map = %d LIMIT 200", F.creatureIdCol(), map))
+    local list = {}
+    if q then
+        repeat
+            local x, y = q:GetFloat(1), q:GetFloat(2)
+            if dist2(x, y, hx, hy) > 400 then list[#list + 1] = { q:GetUInt32(0), x, y, q:GetFloat(3), q:GetString(4) } end
+        until not q:NextRow()
+    end
+    if #list == 0 then return msg(player, k.name .. " пока не нашла(нашёл), куда переехать.") end
+    local p = pick(list)
+    despawnKid(player, st, k)
+    k.moved, k.wish = true, nil
+    k.mmap, k.mx, k.my, k.mz = p[1], p[2] + math.random(-6, 6), p[3] + math.random(-6, 6), p[4]
+    k.partner = pick(TX.NAMES[k.gender == 1 and 0 or 1])
+    k.place = "у таверны, где работает " .. p[5]
+    F.saveMoved(k)
+    local word = k.gender == 1 and "переехала" or "переехал"
+    msg(player, string.format("|cffff80ff%s %s и живёт своей семьёй вместе с %s|r — %s. Навещайте!", k.name, word, k.partner, k.place))
+    F.area(player, k.name .. " " .. word .. " жить своей семьёй")
+end
+
+function F.tickMoveOut(player, st)
+    for _, k in ipairs(st.kids) do
+        if not k.moved and kidStage(k) >= 5 and not k.stay then
+            local d = F.kidAdultDays(k)
+            if d >= CFG.MOVE_OUT_WISH_DAYS and not k.wish then
+                k.wish = true
+                msg(player, "|cffffd100" .. k.name .. "|r выросла(вырос) и мечтает жить своей семьёй. Поговорите (ПКМ): отпустить или попросить остаться.")
+            end
+            if d >= CFG.MOVE_OUT_DAYS then F.moveOut(player, st, k) end
+        end
+    end
+end
+
+-- в гостях у взрослого ребёнка: он и его вторая половинка живут у своей таверны
+function F.tickMoved(player, st, k)
+    st.kpart = st.kpart or {}
+    local here = k.mmap == player:GetMapId() and inOpenWorld(player)
+    local px, py = player:GetLocation()
+    local d = here and dist2(px, py, k.mx, k.my) or 1e9
+    local c = kidObj(player, st, k)
+    if d > 120 then if c or st.kpart[k.id] then F.despawnMoved(player, st, k) end return end
+    if not c and d <= 70 then
+        c = spawnKid(player, st, k, k.mx, k.my, k.mz + 0.3, 0, "away")
+        local pe = SPOUSE_ENTRY[k.gender == 1 and 0 or 1]
+        local pc = player:SpawnCreature(pe, k.mx + 1.5, k.my + 1, k.mz + 0.3, 0, 3, CFG.KID_DESPAWN_MS)
+        if pc then
+            local d2 = F.adultDisplay(F.kidRace(k), k.gender == 1 and 0 or 1)
+            if d2 then pc:SetDisplayId(d2) end
+            pc:SetNPCFlags(0)
+            st.kpart[k.id] = pc:GetGUID()
+        end
+    end
+    if not c then return end
+    local a = st.kai[k.id] or { till = 0 }
+    st.kai[k.id] = a
+    applyKidLook(c, k)
+    local pc = st.kpart[k.id] and player:GetMap():GetWorldObject(st.kpart[k.id])
+    if d < 12 and not a.greeted then
+        a.greeted = true
+        c:SetFacingToObject(player); c:PerformEmote(EMOTE.WAVE)
+        kidSay(c, k, (pick(TX.MOVED_LINES):gsub("%$P", parentWord(player):lower())))
+        if pc then pc:SetFacingToObject(player); pc:PerformEmote(EMOTE.WAVE)
+            F.say(pc, k.partner .. ": " .. pick(TX.PARTNER_LINES):gsub("%$K", k.name), 0) end
+        return
+    end
+    if now() < a.till then return end
+    a.till = now() + math.random(12, 25)
+    local ang, r = math.random() * 2 * math.pi, math.random(1, 5)
+    walkTo(c, k.mx + math.cos(ang) * r, k.my + math.sin(ang) * r, k.mz)
+    if pc then walkTo(pc, k.mx + math.cos(ang) * r + 1.2, k.my + math.sin(ang) * r + 0.6, k.mz) end
+    if d < 25 and math.random() < 0.3 then kidSay(c, k, (pick(TX.MOVED_LINES):gsub("%$P", parentWord(player):lower()))) end
+end
+
+function F.tickFamily(player, st)
+    if #st.kids == 0 then return end
+    local home, d = nearHome(player, st, CFG.SPOUSE_RADIUS)
+    local far = d > CFG.SPOUSE_LEAVE_RADIUS
+    local atHome = 0
+    for _, k in ipairs(st.kids) do
+        if k.moved then F.tickMoved(player, st, k); goto continue end
+        local c = kidObj(player, st, k)
+        local mode = st.kmode[k.id]
+        if c then
+            if mode == "leave" then
+                local a = st.kai[k.id]
+                if not a or now() >= a.till then despawnKid(player, st, k) end
+            elseif mode == "home" and F.schoolTime(k) then
+                -- пора в школу
+                kidSay(c, k, pick({ "Я в школу!", "Пока, я на уроки!", "Опаздываю в школу!" }))
+                local a = st.kai[k.id] or {}
+                st.kai[k.id] = a
+                a.pending, a.sleeping = nil, nil
+                c:SetStandState(0)
+                st.kmode[k.id] = "leave"
+                local ang = math.random() * 2 * math.pi
+                walkTo(c, st.home[2] + math.cos(ang) * 25, st.home[3] + math.sin(ang) * 25, st.home[4])
+                a.till = now() + 8
+            elseif mode == "home" then
+                if far then despawnKid(player, st, k)
+                else atHome = atHome + 1; F.kidStep(player, st, k, c, d) end
+            else
+                if F.schoolTime(k) and not k.skipped then k.skipped = true; msg(player, k.name .. " прогуливает школу! Оценки упадут.") end
+                local stg = applyKidLook(c, k)
+                if math.random() < 0.015 then kidSay(c, k, (pick(TX.KID_LINES[stg]):gsub("Мама! Папа!", parentWord(player) .. "!"))) end
+            end
+        elseif home and atHome < CFG.KIDS_HOME_MAX and not F.schoolTime(k) then
+            -- ребёнок уже дома: играет во дворе
+            local ang, r = math.random() * 2 * math.pi, math.random(2, 7)
+            if spawnKid(player, st, k, st.home[2] + math.cos(ang) * r, st.home[3] + math.sin(ang) * r, st.home[4] + 0.3, ang, "home") then
+                atHome = atHome + 1
+            end
+        end
+        ::continue::
+    end
+end
+
+------------------------------------------------------------------------
+-- супруг
+------------------------------------------------------------------------
+function F.spouseSay(c, r, kind, player, prefix)
+    local line = pick(TX.SPOUSE_LINES[kind]):gsub("%$N", player:GetName())
+    F.say(c, prefix and (r.name .. ": " .. line) or line, 0)
+end
+
+function F.despawnSpouse(player, st, silent)
+    local sp = st.spouse
+    st.spouse = nil
+    if not sp then return end
+    local c = player:GetMap():GetWorldObject(sp.guid)
+    if c then
+        SPOUSE_BY_LOW[c:GetGUIDLow()] = nil
+        c:DespawnOrUnsummon(0)
+    end
+end
+
+-- какое существо изображает супруга дома: для NPC — тот же самый NPC (то же имя и облик)
+function F.spouseEntryOf(key, r)
+    local e = tonumber(tostring(key):match("^C(%d+)$") or "")
+    if e and (r.kind or 0) == 0 then return e, true end
+    return SPOUSE_ENTRY[r.gender == 1 and 1 or 0], false
+end
+
+-- место работы NPC (по базе мира), если не запомнили при знакомстве
+function F.fetchPost(entry, r)
+    -- ВНИМАНИЕ: AzerothCore выключает сервер при запросе к несуществующей колонке/таблице,
+    -- поэтому сначала узнаём, как называется колонка (id или id1 — зависит от версии ядра)
+    local idcol = "id"
+    if WorldDBQuery("SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() "
+        .. "AND TABLE_NAME = 'creature' AND COLUMN_NAME = 'id1' LIMIT 1") then idcol = "id1" end
+    local q = WorldDBQuery("SELECT guid, map, position_x, position_y, position_z, orientation FROM creature WHERE "
+        .. idcol .. " = " .. entry .. " ORDER BY guid LIMIT 1")
+    if not q then return end
+    r.spawn, r.wmap = q:GetUInt32(0), q:GetUInt32(1)
+    r.wx, r.wy, r.wz, r.wo = q:GetFloat(2), q:GetFloat(3), q:GetFloat(4), q:GetFloat(5)
+end
+
+function F.findPostNpc(player, entry, r)
+    for _, c in ipairs(player:GetCreaturesInRange(170, entry) or {}) do
+        if not SPOUSE_BY_LOW[c:GetGUIDLow()] and c:GetSpawnId() ~= 0 and (not r.spawn or r.spawn == 0 or c:GetSpawnId() == r.spawn) then
+            return c
+        end
+    end
+end
+
+function F.restorePost(player, st)
+    local p = st.post
+    st.post = nil
+    if not p then return end
+    local c = player:GetMap():GetWorldObject(p.guid)
+    if c then c:SetPhaseMask(1, true); c:MoveHome() end
+end
+
+-- настоящий NPC на работе: днём стоит на своём месте, вечером уходит домой (и его там нет)
+function F.tickPost(player, st, r, entry, wantHome)
+    if not r.wx or r.wmap ~= player:GetMapId() then return end
+    local px, py = player:GetLocation()
+    if dist2(px, py, r.wx, r.wy) > 160 then return end
+    local c = F.findPostNpc(player, entry, r)
+    if not c then return end
+    local hidden = c:GetPhaseMask() ~= 1
+    if wantHome then
+        if hidden then return end
+        local p = st.post
+        if p and p.leaving then
+            if now() >= p.till then c:SetPhaseMask(2, true); p.leaving = nil end
+            return
+        end
+        st.post = { guid = c:GetGUID() }
+        if player:GetDistance(c) < 60 then
+            -- уходит пешком у вас на глазах
+            local cx, cy, cz = c:GetLocation()
+            local ang = atan2(cy - py, cx - px) + (math.random() - 0.5)
+            c:SetStandState(0); c:EmoteState(0)
+            walkTo(c, cx + math.cos(ang) * 25, cy + math.sin(ang) * 25, cz)
+            F.spouseSay(c, r, "offwork", player)
+            st.post.leaving, st.post.till = true, now() + 10
+        else
+            c:SetPhaseMask(2, true)
+        end
+    elseif hidden then
+        c:SetPhaseMask(1, true)
+        c:MoveHome()
+        if player:GetDistance(c) < 60 then F.spouseSay(c, r, "onwork", player) end
+        st.post = nil
+    end
+end
+
+function F.registerTwinGossip(entry)
+    if TWIN_GOSSIP[entry] or SPOUSE_ENTRIES[entry] then return end
+    TWIN_GOSSIP[entry] = true
+    RegisterCreatureGossipEvent(entry, 1, function(e, p, c)
+        if SPOUSE_BY_LOW[c:GetGUIDLow()] then return onSpouseHello(e, p, c) end
+        if F.GUEST_BY_LOW[c:GetGUIDLow()] then return F.guestHello(p, c) end
+    end)
+    RegisterCreatureGossipEvent(entry, 2, function(e, p, c, s, i)
+        if SPOUSE_BY_LOW[c:GetGUIDLow()] then return onSpouseSelect(e, p, c, s, i) end
+        if F.GUEST_BY_LOW[c:GetGUIDLow()] then return F.guestSelect(p, c, i) end
+    end)
+end
+
+function F.spouseArrive(player, st, sp, r, c, p)
+    local prefix = sp.prefix
+    local k = p.kind
+    if k == "arrive" then
+        F.spouseSay(c, r, "arrive", player, prefix)
+    elseif k == "bed" then
+        c:NearTeleport(p.x, p.y, p.z + 0.6, p.o); c:SetStandState(3); sp.sleeping = true
+        return
+    elseif k == "stove" then
+        c:SetFacing(p.o); c:EmoteState(TX.LIFE_EMOTES.USE); F.spouseSay(c, r, "cook", player, prefix)
+    elseif k == "books" then
+        c:SetStandState(1); F.spouseSay(c, r, "read", player, prefix)
+    elseif k == "table" then
+        c:SetStandState(1); c:PerformEmote(TX.LIFE_EMOTES.EAT); F.spouseSay(c, r, "eat", player, prefix)
+    elseif k == "seat" then
+        c:NearTeleport(p.x, p.y, p.z, p.o); c:SetStandState(5); F.spouseSay(c, r, "sit", player, prefix)
+    elseif k == "kids" then
+        c:PerformEmote(TX.LIFE_EMOTES.TALK); F.spouseSay(c, r, "kids", player, prefix)
+    elseif k == "player" then
+        c:SetFacingToObject(player); c:PerformEmote(TX.LIFE_EMOTES.TALK)
+        F.spouseSay(c, r, sp.greeted and "talk" or "greet", player, prefix)
+        sp.greeted = true
+        add(st, "social", 4)
+    end
+    sp.till = now() + (isNight() and math.random(5, 10) or math.random(25, 60))
+end
+
+function F.tickSpouse(player, st, force)
+    local key, r = findPartner(st)
+    if not key or r.status ~= "married" or r.kind == 1 then
+        if st.post then F.restorePost(player, st) end
+        return F.despawnSpouse(player, st)
+    end
+    local entry, real = F.spouseEntryOf(key, r)
+    if real then
+        REAL_SPOUSE[entry] = true
+        if not r.wx and not r.postTried then r.postTried = true; F.fetchPost(entry, r) end
+    end
+    if force then st.stayDay = simDay() end
+    local atWork = isWorkTime() and st.stayDay ~= simDay()
+    if real then F.tickPost(player, st, r, entry, not atWork) end
+
+    local home, d = nearHome(player, st, CFG.SPOUSE_RADIUS)
+    local c = st.spouse and player:GetMap():GetWorldObject(st.spouse.guid)
+    if st.spouse and not c then st.spouse = nil end
+    if not st.home or st.home[1] ~= player:GetMapId() or d > CFG.SPOUSE_LEAVE_RADIUS then return F.despawnSpouse(player, st) end
+    local hx, hy, hz = st.home[2], st.home[3], st.home[4]
+    local tnow = now()
+
+    if not c then
+        if atWork or not home then return end
+        -- идёт домой пешком: со стороны работы (если знаем, где она)
+        local ang = (r.wx and r.wmap == st.home[1]) and atan2(r.wy - hy, r.wx - hx) or math.random() * 2 * math.pi
+        c = player:SpawnCreature(entry, hx + math.cos(ang) * 24, hy + math.sin(ang) * 24, hz + 0.5, ang + math.pi, 8, 0)
+        if not c then return end
+        if r.display and r.display > 0 then c:SetDisplayId(r.display) end
+        c:SetNPCFlags(1)
+        if real then F.registerTwinGossip(entry) end
+        SPOUSE_BY_LOW[c:GetGUIDLow()] = { owner = player:GetGUIDLow(), key = key }
+        st.spouse = { guid = c:GetGUID(), till = 0, prefix = not real,
+            pending = { kind = "arrive", x = hx, y = hy, deadline = tnow + 20 } }
+        walkTo(c, hx, hy, hz)
+        msg(player, r.name .. " возвращается домой.")
+        return
+    end
+
+    local sp = st.spouse
+    if sp.leaving then
+        if tnow >= sp.till then F.despawnSpouse(player, st) end
+        return
+    end
+    if atWork then
+        sp.leaving, sp.till, sp.pending, sp.sleeping = true, tnow + 10, nil, nil
+        c:SetStandState(0); c:EmoteState(0)
+        local ang = (r.wx and r.wmap == st.home[1]) and atan2(r.wy - hy, r.wx - hx) or math.random() * 2 * math.pi
+        walkTo(c, hx + math.cos(ang) * 26, hy + math.sin(ang) * 26, hz)
+        F.spouseSay(c, r, "work", player, sp.prefix)
+        return
+    end
+    if sp.pending then
+        if not F.arrived(c, sp.pending) then return end
+        local p = sp.pending
+        sp.pending = nil
+        return F.spouseArrive(player, st, sp, r, c, p)
+    end
+    if sp.sleeping then
+        if isNight() then
+            if math.random() < 0.04 then F.spouseSay(c, r, "sleep", player, sp.prefix) end
+            return
+        end
+        sp.sleeping = nil
+        c:SetStandState(0)
+        F.spouseSay(c, r, "morning", player, sp.prefix)
+        sp.till = tnow + 5
+        return
+    end
+    if tnow < sp.till then return end
+
+    c:SetStandState(0); c:EmoteState(0)
+    local choice
+    if not sp.greeted and d < 25 then
+        choice = { kind = "player" }
+    elseif isNight() then
+        local b = F.bedFor(st, "S")
+        if b then
+            local side = b.o + math.pi / 2
+            choice = { kind = "bed", x = b.x + math.cos(side) * 0.5, y = b.y + math.sin(side) * 0.5, z = b.z, o = b.o }
+            F.spouseSay(c, r, "bed", player, sp.prefix)
+        end
+    end
+    if not choice then
+        local roll = math.random()
+        local evening = isEvening()
+        local want
+        if roll < (evening and 0.3 or 0.22) then want = { "stove" }
+        elseif roll < 0.42 then want = { "seat" }
+        elseif roll < 0.55 then want = { "books" }
+        elseif roll < (evening and 0.75 or 0.68) then want = { "table" } end
+        local spot = want and F.homeSpot(st, want)
+        if spot then
+            local kind = F.furnKind(spot)
+            local off = (kind == "stove" and 1.3) or (kind == "table" and 1.2) or 0
+            choice = { kind = kind, x = spot.x + math.cos(spot.o) * off, y = spot.y + math.sin(spot.o) * off, z = spot.z,
+                o = kind == "seat" and spot.o or (spot.o + math.pi) % (2 * math.pi) }
+        elseif next(st.kidsOut) and roll < 0.8 then
+            for _, k in ipairs(st.kids) do
+                local kc = st.kmode[k.id] == "home" and kidObj(player, st, k)
+                if kc then local kx, ky, kz = kc:GetLocation(); choice = { kind = "kids", x = kx + 1.5, y = ky, z = kz }; break end
+            end
+        end
+        if not choice and d < 25 and math.random() < 0.5 then choice = { kind = "player" } end
+        if not choice then
+            local a = math.random() * 2 * math.pi
+            walkTo(c, hx + math.cos(a) * 4, hy + math.sin(a) * 4, hz)
+            sp.till = tnow + math.random(15, 30)
+            return
+        end
+    end
+    if choice.kind == "player" then
+        local px, py, pz = player:GetLocation()
+        local ang = atan2(py - hy, px - hx)
+        choice.x, choice.y, choice.z = px - math.cos(ang) * 1.8, py - math.sin(ang) * 1.8, pz
+    end
+    choice.deadline = tnow + 20
+    walkTo(c, choice.x, choice.y, choice.z)
+    sp.pending = choice
+end
+
+------------------------------------------------------------------------
+-- 6.0: СЕЗОНЫ, ПОГОДА, ПРАЗДНИКИ, СЧЕТА, БОЛЕЗНИ, ШКОЛА
+------------------------------------------------------------------------
+TX.WEEKDAYS = { "понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье" }
+TX.SEASONS = { "весна", "лето", "осень", "зима" }
+-- погода по сезонам: { вероятность, состояние SMSG_WEATHER, сила, название }
+TX.WEATHER = {
+    { { 0.55, 0, 0, "ясно" }, { 0.35, 4, 0.5, "дождь" }, { 0.10, 86, 0.8, "гроза" } },
+    { { 0.80, 0, 0, "солнечно" }, { 0.10, 3, 0.3, "лёгкий дождь" }, { 0.10, 86, 0.9, "гроза" } },
+    { { 0.40, 0, 0, "ясно" }, { 0.45, 4, 0.6, "дождь" }, { 0.15, 1, 0.5, "туман" } },
+    { { 0.30, 0, 0, "морозно и ясно" }, { 0.55, 7, 0.6, "снег" }, { 0.15, 8, 1.0, "метель" } },
+}
+TX.HOLIDAYS = {
+    { season = 1, day = 3, k = "love",    n = "День любви",               moodlet = "loveday" },
+    { season = 2, day = 3, k = "sun",     n = "Праздник летнего солнца",  moodlet = "holiday" },
+    { season = 3, day = 3, k = "harvest", n = "Праздник урожая",          moodlet = "holiday" },
+    { season = 4, day = 3, k = "winter",  n = "Зимний покров",            moodlet = "holiday" },
+}
+
+function F.seasonIdx() return math.floor(simDay() / 7) % 4 + 1 end
+function F.seasonName() return TX.SEASONS[F.seasonIdx()] end
+function F.weekdayName() return TX.WEEKDAYS[simDay() % 7 + 1] end
+function F.isWeekend() return simDay() % 7 >= 5 end
+function F.holidayToday()
+    for _, h in ipairs(TX.HOLIDAYS) do if h.season == F.seasonIdx() and simDay() % 7 == h.day then return h end end
+end
+function F.isHoliday(k) local h = F.holidayToday(); return h and h.k == k end
+
+function F.todayWeather()
+    if SIM.wday ~= simDay() then
+        SIM.wday = simDay()
+        local opts, r, acc = TX.WEATHER[F.seasonIdx()], math.random(), 0
+        SIM.weather = opts[1]
+        for _, o in ipairs(opts) do acc = acc + o[1]; if r <= acc then SIM.weather = o; break end end
+    end
+    return SIM.weather
+end
+function F.weatherName() return F.todayWeather()[4] end
+
+function F.sendWeather(player)
+    if not CFG.SIM_WEATHER or not inOpenWorld(player) then return end
+    local w = F.todayWeather()
+    local pk = CreatePacket(0x2F4, 9)        -- SMSG_WEATHER: состояние, сила, резко
+    pk:WriteULong(w[2]); pk:WriteFloat(w[3]); pk:WriteUByte(0)
+    player:SendPacket(pk)
+end
+
+function F.sendWorld(player, st)
+    local h = F.holidayToday()
+    local bill = st.bill and (st.bill.amount .. ":" .. (st.bill.due - simDay())) or ""
+    send(player, string.format("W;%d;%d;%s;%s;%s;%s;%d", F.seasonIdx(), simDay() % 7, F.weatherName(), h and h.n or "",
+        bill, st.powerOff and "1" or "0", st.ill and 1 or 0))
+end
+
+-- выплаты, счета, болезни, школа — раз в игровой день
+function F.dailyTick(player, st)
+    local d = simDay()
+    if st.lastDay == d then return end
+    local first = st.lastDay == nil
+    st.lastDay = d
+    if first then return end
+    -- праздник
+    local h = F.holidayToday()
+    if h then
+        msg(player, "|cffff80ffСегодня праздник: " .. h.n .. "!|r")
+        F.area(player, "Праздник: " .. h.n)
+        F.addMoodlet(player, st, h.moodlet)
+        if h.k == "winter" then local g = player:GetLevel() * 200; player:ModifyMoney(g); msg(player, "Подарок к празднику: " .. money(g)) end
+    end
+    -- гонорары за книги
+    for i = #(st.royalty or {}), 1, -1 do
+        local r = st.royalty[i]
+        player:ModifyMoney(r.per)
+        msg(player, "Гонорар за книгу: " .. money(r.per) .. ".")
+        r.days = r.days - 1
+        if r.days <= 0 then table.remove(st.royalty, i) end
+    end
+    -- счета: каждый понедельник
+    if d % 7 == 0 and #st.furn > 0 then
+        local total = 0
+        for _, r in ipairs(st.furn) do local it = ITEM_BY_ENTRY[r.entry]; if it then total = total + levelPrice(player, it.price) end end
+        local amount = math.max(10000, math.floor(total * CFG.BILL_RATE))
+        st.bill = { amount = (st.bill and st.bill.amount or 0) + amount, due = d + 3 }
+        msg(player, "|cffffd100Пришли счета за дом:|r " .. money(st.bill.amount) .. ". Оплатить за 3 дня (телефон или компьютер).")
+    end
+    if st.bill and d > st.bill.due and not st.powerOff then
+        st.powerOff = true
+        F.addMoodlet(player, st, "broke")
+        msg(player, "|cffff4040Свет отключили за неуплату!|r Компьютер, телевизор и кладовая не работают.")
+    end
+    -- болезнь
+    if st.ill and d >= st.ill then
+        st.ill = nil; F.removeMoodlet(st, "ill"); msg(player, "Вы выздоровели!")
+    elseif not st.ill then
+        local ch = 0.03 + (st.needs.hygiene < 25 and 0.05 or 0) + (F.seasonIdx() == 4 and 0.05 or 0) + (st.moodlets and st.moodlets.wet and 0.05 or 0)
+        if math.random() < ch then
+            st.ill = d + 2
+            F.addMoodlet(player, st, "ill")
+            msg(player, "|cffff8040Вы простудились.|r Сон в кровати и лекарство помогут быстрее (телефон → врач).")
+        end
+    end
+    -- школа: оценки за вчерашний день
+    for _, k in ipairs(st.kids) do
+        local stg = kidStage(k)
+        if (stg == 3 or stg == 4) and not k.moved then
+            local delta = (k.hwDone and 6 or -8) + (k.happy >= 50 and 2 or -2) + (k.skipped and -10 or 0)
+            k.grade = clamp((k.grade or 60) + delta, 0, 100)
+            k.hwDone, k.skipped = nil, nil
+            k.hw = d % 7 < 5
+            CharDBExecute(string.format("UPDATE character_sims_children SET grade = %.1f WHERE id = %d", k.grade, k.id))
+            if k.grade < 40 then F.addMoodlet(player, st, "grade_bad") end
+        end
+    end
+    F.sendWorld(player, st)
+end
+
+-- эмоция и мудлеты для аддона: E;номер;сила;мудлет~эмоция~сила~сек|...
+function F.sendEmotion(player, st)
+    local e, i, list = F.emotion(st)
+    local parts = {}
+    for _, m in ipairs(list) do parts[#parts + 1] = m.n .. "~" .. TX.EMO_IDX[m.e] .. "~" .. m.w .. "~" .. math.floor(m.left) end
+    local all = table.concat(parts, "|")
+    local head = "E;" .. TX.EMO_IDX[e] .. ";" .. i .. ";"
+    if #all + #head <= 240 then return send(player, head .. all) end
+    send(player, head .. (all:sub(1, 240 - #head):match("(.*)|") or ""))
+end
+
+-- список отношений для панели: RL;имя~дружба~романтика~статус|...
+function F.sendRelList(player, st)
+    local list = {}
+    for _, r in pairs(st.rel) do list[#list + 1] = r end
+    table.sort(list, function(a, b) return (math.abs(a.f) + a.r) > (math.abs(b.f) + b.r) end)
+    local parts = {}
+    for i = 1, math.min(#list, 10) do
+        local r = list[i]
+        parts[#parts + 1] = (r.name or "?"):gsub("[~|;]", "") .. "~" .. r.f .. "~" .. r.r .. "~" .. (r.status or "")
+    end
+    local all = table.concat(parts, "|")
+    while #all > 230 do all = all:match("(.*)|") or "" end
+    send(player, "RL;" .. all)
+end
+
+function F.gradeLetter(g)
+    g = g or 60
+    return g >= 85 and "A" or (g >= 70 and "B" or (g >= 55 and "C" or (g >= 40 and "D" or "F")))
+end
+function F.schoolTime(k)
+    local h = simHourF()
+    local stg = kidStage(k)
+    return (stg == 3 or stg == 4) and simDay() % 7 < 5 and h >= 8 and h < 15
+end
+
+function F.payBills(player, st)
+    if not st.bill then return msg(player, "Неоплаченных счетов нет.") end
+    if player:GetCoinage() < st.bill.amount then return msg(player, "Не хватает денег: нужно " .. money(st.bill.amount) .. ".") end
+    player:ModifyMoney(-st.bill.amount)
+    msg(player, "Счета оплачены: " .. money(st.bill.amount) .. ".")
+    st.bill, st.powerOff = nil, nil
+    F.removeMoodlet(st, "broke")
+    F.sendWorld(player, st)
+end
+
+-- погода влияет на настроение, когда вы не дома
+function F.weatherMood(player, st)
+    if not inOpenWorld(player) or st.inside then return end
+    local w = F.todayWeather()
+    if w[2] >= 3 and w[2] <= 5 or w[2] == 86 then F.addMoodlet(nil, st, "wet")
+    elseif w[2] >= 6 and w[2] <= 8 then F.addMoodlet(nil, st, "cold")
+    elseif F.seasonIdx() == 2 and w[2] == 0 and isWorkTime() then F.addMoodlet(nil, st, "sunny") end
+end
+
+------------------------------------------------------------------------
+-- 6.0: СПАЛЬНЯ — РОМАНТИЧЕСКИЙ ВЕЧЕР И РЕБЁНОК, КАК В СИМС
+------------------------------------------------------------------------
+-- супруг дома (или любой персонаж) идёт с вами к кровати; оба в постели, над ней дымка; потом результат
+function F.bedScene(player, st, c, kind, done)
+    local b = F.bedFor(st, "S")
+    if not b then
+        local x, y = player:GetLocation()
+        for _, r in ipairs(st.furn) do
+            local it = ITEM_BY_ENTRY[r.entry]
+            if it and it.kind == "bed" and r.map == player:GetMapId() and dist2(x, y, r.x, r.y) < 40 then b = r; break end
+        end
+    end
+    if not b then return false end
+    if st.scene then msg(player, "Вы уже в спальне."); return true end
+    st.scene = true
+    local sp = st.spouse
+    if sp and SPOUSE_BY_LOW[c:GetGUIDLow()] then sp.pending, sp.sleeping, sp.till = nil, nil, now() + 60; sp.scene = true end
+    c:SetStandState(0); c:EmoteState(0)
+    walkTo(c, b.x, b.y, b.z)
+    local cname = nameOf(st, c)
+    msg(player, "|cffff80ffВы с " .. cname .. " уходите в спальню...|r")
+    local cg = c:GetGUID()
+    player:RegisterEvent(function(_, _, _, p)
+        local s2 = S[p:GetGUIDLow()]
+        local cc = p:GetMap():GetWorldObject(cg)
+        if not s2 then return end
+        local side = (b.o or 0) + math.pi / 2
+        p:NearTeleport(b.x + math.cos(side) * 0.45, b.y + math.sin(side) * 0.45, b.z + 0.6, b.o or 0)
+        p:SetStandState(3)
+        p:SetRooted(true)
+        setUndressed(p, true)
+        if cc then cc:NearTeleport(b.x - math.cos(side) * 0.45, b.y - math.sin(side) * 0.45, b.z + 0.6, b.o or 0); cc:SetStandState(3) end
+        local fx = {}
+        for _, e in ipairs({ { CFG.HAZE_ENTRY, 0.9 }, { CFG.BUBBLES_ENTRY, 1.2 }, { CFG.HAZE_ENTRY, 1.4 } }) do
+            local o = PerformIngameSpawn(2, e[1], p:GetMapId(), 0, b.x, b.y, b.z + e[2], b.o or 0, false)
+            if o then fx[#fx + 1] = o:GetGUID() end
+        end
+        F.emote(p, "и " .. cname .. " прячутся под одеялом... *шорох и хихиканье*")
+        p:RegisterEvent(function(_, _, _, p2)
+            local s3 = S[p2:GetGUIDLow()]
+            local map = p2:GetMap()
+            for _, g in ipairs(fx) do local o = map:GetWorldObject(g); if o then o:RemoveFromWorld(false) end end
+            p2:SetRooted(false)
+            p2:SetStandState(0)
+            setUndressed(p2, false)
+            local c2 = map:GetWorldObject(cg)
+            if c2 then c2:SetStandState(0); c2:PerformEmote(EMOTE.SHY) end
+            if s3 then
+                s3.scene = nil
+                if s3.spouse then s3.spouse.scene = nil; s3.spouse.till = now() + 10 end
+                F.addMoodlet(p2, s3, "woohoo"); F.addMoodlet(p2, s3, "woohoo2")
+                F.count(p2, s3, "woohoo")
+                if done then done(p2, s3, c2) end
+                sendHud(p2, s3)
+            end
+        end, CFG.WOOHOO_SECONDS * 1000, 1)
+    end, 4000, 1)
+    return true
+end
+
+------------------------------------------------------------------------
+-- 6.0: ТЕЛЕФОН И ГОСТИ
+------------------------------------------------------------------------
+local GUEST_BY_LOW = {}   -- guidLow гостя -> { owner, key }
+F.GUEST_BY_LOW = GUEST_BY_LOW
+
+function F.friendsList(st)
+    local list = {}
+    for key, r in pairs(st.rel) do
+        local e = tostring(key):match("^C(%d+)$")
+        if e and r.f >= 30 and r.status ~= "child" and key ~= st.partnerKey then list[#list + 1] = { key = key, r = r, entry = tonumber(e) } end
+    end
+    table.sort(list, function(a, b) return a.r.f > b.r.f end)
+    return list
+end
+
+function F.phoneMenu(player, st)
+    player:GossipClearMenu()
+    F.gAdd(player, 0, "|cff4fc3f7Телефон|r  " .. clockText() .. ", " .. F.weekdayName(), 58, 0)
+    local _, pr = findPartner(st)
+    if pr and pr.status == "married" then F.gAdd(player, 0, "Позвонить супругу: «Приходи домой»", 58, 1) end
+    if #st.kids > 0 then F.gAdd(player, 0, "Позвать детей", 58, 2) end
+    for i, f in ipairs(F.friendsList(st)) do
+        if i > 6 then break end
+        F.gAdd(player, 0, "Пригласить в гости: " .. f.r.name .. " (дружба " .. f.r.f .. ")", 58, 10 + i)
+    end
+    F.gAdd(player, 1, "Заказать пиццу (" .. money(levelPrice(player, 3000)) .. ")", 58, 3)
+    if st.ill then F.gAdd(player, 1, "Вызвать врача (" .. money(levelPrice(player, 10000)) .. ")", 58, 4) end
+    if st.bill then F.gAdd(player, 1, "Оплатить счета (" .. money(st.bill.amount) .. ")", 58, 5) end
+    F.gAdd(player, 0, "Выйти на смену", 58, 6)
+    F.gAdd(player, 0, "Стремление и награды", 58, 7)
+    player:GossipSendMenu(CFG.NPC_TEXT, player, MENU_PLAYER)
+end
+
+function F.phoneSelect(player, st, intid)
+    player:GossipComplete()
+    if intid == 1 then
+        st.stayDay = simDay()
+        if st.spouse then msg(player, "Супруг(а) уже дома.") else msg(player, "«Уже иду, дорогой(ая)!»"); pcall(F.tickSpouse, player, st, true) end
+    elseif intid == 2 then callKids(player, st)
+    elseif intid == 3 then
+        local price = levelPrice(player, 3000)
+        if player:GetCoinage() < price then return msg(player, "Не хватает денег.") end
+        player:ModifyMoney(-price)
+        msg(player, "Пиццу привезут через минуту.")
+        player:RegisterEvent(function(_, _, _, p)
+            local s2 = S[p:GetGUIDLow()]
+            if not s2 then return end
+            add(s2, "hunger", 45); F.addMoodlet(p, s2, "pizza")
+            msg(p, "|cffffd100Курьер:|r «Ваша пицца с сыром из Даларана!» Приятного аппетита.")
+            sendHud(p, s2)
+        end, 60000, 1)
+    elseif intid == 4 then
+        local price = levelPrice(player, 10000)
+        if player:GetCoinage() < price then return msg(player, "Не хватает денег.") end
+        player:ModifyMoney(-price)
+        st.ill = nil; F.removeMoodlet(st, "ill")
+        msg(player, "Врач выписал лекарство. Вы здоровы!")
+    elseif intid == 5 then F.payBills(player, st)
+    elseif intid == 6 then startShift(player, st)
+    elseif intid == 7 then F.aspMenu(player, st)
+    elseif intid > 10 then
+        local f = F.friendsList(st)[intid - 10]
+        if f then F.inviteGuest(player, st, f) end
+    end
+end
+
+function F.inviteGuest(player, st, f)
+    if not nearHome(player, st, CFG.SPOUSE_RADIUS) then return msg(player, "Пригласить в гости можно, когда вы дома.") end
+    if st.guest then return msg(player, "У вас уже гости.") end
+    local hx, hy, hz = st.home[2], st.home[3], st.home[4]
+    local ang = math.random() * 2 * math.pi
+    local c = player:SpawnCreature(f.entry, hx + math.cos(ang) * 22, hy + math.sin(ang) * 22, hz + 0.5, ang + math.pi, 8, 0)
+    if not c then return msg(player, f.r.name .. " не может прийти.") end
+    if f.r.display and f.r.display > 0 then c:SetDisplayId(f.r.display) end
+    c:SetNPCFlags(1)
+    F.registerTwinGossip(f.entry)
+    GUEST_BY_LOW[c:GetGUIDLow()] = { owner = player:GetGUIDLow(), key = f.key }
+    st.guest = { guid = c:GetGUID(), key = f.key, till = now() + CFG.GUEST_SECONDS, next = 0 }
+    walkTo(c, hx, hy, hz)
+    msg(player, f.r.name .. ": «С удовольствием! Уже иду.»")
+end
+
+function F.tickGuest(player, st)
+    local g = st.guest
+    if not g then return end
+    local c = player:GetMap():GetWorldObject(g.guid)
+    local r = st.rel[g.key]
+    local home, d = nearHome(player, st, CFG.SPOUSE_LEAVE_RADIUS)
+    if not c or not home or now() >= g.till then
+        if c then
+            if g.leaving then
+                if now() >= g.leaving then GUEST_BY_LOW[c:GetGUIDLow()] = nil; c:DespawnOrUnsummon(0); st.guest = nil end
+                return
+            end
+            g.leaving = now() + 8
+            c:SetStandState(0)
+            F.say(c, "Спасибо за вечер! Мне пора.", 0)
+            local hx, hy, hz = st.home[2], st.home[3], st.home[4]
+            local ang = math.random() * 2 * math.pi
+            walkTo(c, hx + math.cos(ang) * 25, hy + math.sin(ang) * 25, hz)
+            return
+        end
+        st.guest = nil
+        return
+    end
+    if now() < g.next then return end
+    g.next = now() + math.random(15, 30)
+    c:SetStandState(0)
+    local px, py, pz = player:GetLocation()
+    if not g.greeted and d < 30 then
+        g.greeted = true
+        walkTo(c, px + 1.5, py + 1, pz)
+        F.say(c, "Привет, " .. player:GetName() .. "! Спасибо, что позвали!", 0)
+        F.addMoodlet(player, st, "guest")
+        return
+    end
+    local roll = math.random()
+    if roll < 0.4 then
+        walkTo(c, px + math.random(-2, 2), py + math.random(-2, 2), pz)
+        c:PerformEmote(TX.LIFE_EMOTES.TALK)
+        F.say(c, pick(TX.LIFE_SOLO), 0)
+        add(st, "social", 3)
+    elseif roll < 0.7 then
+        local s = F.homeSpot(st, { "seat", "table" })
+        if s then walkTo(c, s.x, s.y, s.z) end
+    else
+        c:PerformEmote(TX.LIFE_EMOTES.LAUGH)
+    end
+end
+
+function F.guestHello(player, creature)
+    local info = GUEST_BY_LOW[creature:GetGUIDLow()]
+    if not info or info.owner ~= player:GetGUIDLow() then return end
+    player:GossipClearMenu()
+    local st = S[player:GetGUIDLow()]
+    local r = st and st.rel[info.key]
+    F.gAdd(player, 0, (r and r.name or "Гость") .. " — ваш гость", 62, 0)
+    for i, act in ipairs({ { "Поболтать", "talk" }, { "Пошутить", "joke" }, { "Обнять", "hug" }, { "Подарить подарок", "gift" } }) do
+        F.gAdd(player, 0, act[1], 62, i)
+    end
+    F.gAdd(player, 0, "Проводить гостя", 62, 9)
+    player:GossipSendMenu(CFG.NPC_TEXT, creature)
+    return true
+end
+function F.guestSelect(player, creature, intid)
+    player:GossipComplete()
+    local st = S[player:GetGUIDLow()]
+    if not st then return end
+    if intid == 9 then if st.guest then st.guest.till = 0 end return end
+    local acts = { "talk", "joke", "hug", "gift" }
+    if acts[intid] then doSocial(player, st, acts[intid], creature) end
+    return true
+end
+
+------------------------------------------------------------------------
+-- 6.0: МЕНЮ СТРЕМЛЕНИЙ И НАГРАД (через Хранителя или телефон)
+------------------------------------------------------------------------
+function F.aspMenu(player, st)
+    player:GossipClearMenu()
+    local a = st.asp and TX.ASP_BY[st.asp]
+    F.gAdd(player, 0, "Очки удовлетворения: |cffffd100" .. (st.sp or 0) .. "|r", 60, 0)
+    if a then
+        F.gAdd(player, 0, "Стремление: |cffffd100" .. a.n .. "|r — этап " .. (st.aspStage or 0) .. "/3", 60, 0)
+        if (st.aspStage or 0) < 3 then F.gAdd(player, 0, "  Цель: " .. F.aspText(st, a.s[(st.aspStage or 0) + 1]), 60, 0) end
+    end
+    for i, x in ipairs(TX.ASPS) do
+        if not a or x.k ~= a.k then F.gAdd(player, 3, "Выбрать стремление: " .. x.n, 60, i) end
+    end
+    for i, r in ipairs(TX.REWARDS) do
+        F.gAdd(player, 1, string.format("Награда: %s — %d очков", r.n, r.c), 60, 100 + i)
+    end
+    player:GossipSendMenu(CFG.NPC_TEXT, player, MENU_PLAYER)
+end
+function F.aspSelect(player, st, intid)
+    if intid >= 100 and TX.REWARDS[intid - 100] then F.buyReward(player, st, TX.REWARDS[intid - 100].k)
+    elseif TX.ASPS[intid] then F.setAspiration(player, st, TX.ASPS[intid].k) end
+    if intid ~= 0 then return F.aspMenu(player, st) end
+    player:GossipComplete()
+end
+
+------------------------------------------------------------------------
+-- ТИК
+------------------------------------------------------------------------
+local function tickPlayer(player, dt)
+    if isBot(player) then return end
+    local g = player:GetGUIDLow()
+    local st = S[g]
+    if not st or player:IsDead() then return end
+    pcall(tickWalls, player, st)
+    if st.gm.freeze or (CFG.FREEZE_FOR_GM and player:IsGM()) then return sendHud(player, st) end
+    if CFG.PAUSE_IN_PVP and (player:InBattleground() or player:InArena()) then return sendHud(player, st) end
+
+    dt = dt * st.gm.timex
+    local n = st.needs
+    local inCombat = player:IsInCombat()
+    local stand = player:GetStandState()
+    local working = st.work ~= nil
+    st.comfort = comfortOf(player, st)
+    local cozy = 1 - st.comfort * 0.015
+    local kidsSad = tickKids(player, st, dt)
+    pcall(F.tickMoveOut, player, st)
+
+    -- сон: любой «лёжа» (stand state 3) считается сном, даже без /sleep
+    if stand == 3 and not inCombat then
+        if not st.sleeping then st.sleeping = "floor" end
+    elseif st.sleeping then
+        if st.sleeping == "bed" and n.energy >= 80 then
+            F.addMoodlet(player, st, "slept")
+            if st.ill and st.ill > simDay() then st.ill = simDay() + 1 end   -- сон в кровати лечит быстрее
+        end
+        st.sleeping = nil
+        msg(player, n.energy >= 95 and "Вы отлично выспались!" or "Вы проснулись.")
+    end
+    pcall(F.dailyTick, player, st)
+    pcall(F.weatherMood, player, st)
+    if inCombat then pcall(F.skillGain, player, st, "fitness", 2) end
+    if st.ill and math.random() < 0.15 then F.emote(player, "чихает.") end
+
+    for _, k in ipairs(NEEDS) do
+        local rate = CFG.DECAY[k]
+        if k == "bladder" and st.perks and st.perks.bladder then rate = rate * 0.5 end
+        if k == "hunger" then
+            if hasTrait(st, "glutton") then rate = rate * 1.5 end
+            if st.sleeping then rate = rate * 0.5 end
+        elseif k == "energy" then
+            if hasTrait(st, "energetic") then rate = rate * 0.7 end
+            if inCombat then rate = rate * 1.5 end
+            if working then rate = rate * 1.5 end
+            if st.sleeping then rate = 0 end
+            if st.ill then rate = rate * 1.3 end
+            rate = rate * cozy
+        elseif k == "hygiene" then
+            if hasTrait(st, "slob") then rate = rate * 0.6 end
+            if hasTrait(st, "neat") then rate = rate * 1.2 end
+            if inCombat then rate = rate * 1.6 end
+        elseif k == "fun" then
+            if hasTrait(st, "active") and not inCombat then rate = rate * 1.3 end
+            if working then rate = rate * (hasTrait(st, "workaholic") and 0.5 or 1.6) end
+            if st.sleeping then rate = rate * 0.3 end
+            rate = rate * cozy
+        elseif k == "social" then
+            if hasTrait(st, "party") then rate = rate * 1.5 end
+            if hasTrait(st, "loner") then rate = rate * 0.4 end
+            if st.sleeping then rate = rate * 0.3 end
+            if kidsSad then rate = rate * 1.2 end
+            if next(st.kidsOut) or st.spouse then rate = rate * (hasTrait(st, "family") and 0.3 or 0.6) end
+            rate = rate * cozy
+        end
+        n[k] = n[k] - rate * dt
+    end
+
+    local t = CFG.TICK_SECONDS / 20 * st.gm.timex
+    local rest = hasTrait(st, "lazy") and 1.5 or 1
+    if player:IsInWater() then add(st, "hygiene", 6 * t); add(st, "fun", 1 * t) end
+    if inCombat then add(st, "fun", (hasTrait(st, "active") and 3 or 1.5) * t) end
+    if player:IsInGroup() then
+        add(st, "social", 1.2 * t * (hasTrait(st, "party") and 1.5 or (hasTrait(st, "loner") and 0.5 or 1)))
+    end
+    if st.sleeping then
+        local gain = (st.sleeping == "bed" and 12 or 6) * t * rest * st.gm.sleepx * (st.perks and st.perks.sleeper and 2 or 1)
+        add(st, "energy", gain)
+        dbg(player, st, string.format("сон (%s): энергия +%.1f", st.sleeping, gain))
+    elseif stand == 1 or stand == 2 or (stand >= 4 and stand <= 6) then
+        add(st, "energy", 1.5 * t * rest)
+    end
+    for _, k in ipairs(NEEDS) do n[k] = clamp(n[k], 0, 100) end
+
+    applyEffects(player, st, inCombat)
+    if st.work and now() >= st.work then
+        local j = st.job
+        finishShift(player, st, j and (j.total - j.left) / j.total * 0.9 or 1)
+    end
+    if st.preg and now() >= st.preg.till then
+        local p0 = st.preg
+        birth(player, st)
+        F.addMoodlet(player, st, "baby")
+        if p0.twins then
+            st.preg = { till = 0, pkey = p0.pkey, pname = p0.pname }
+            birth(player, st)
+            msg(player, "|cffff80ffДвойня!|r")
+        end
+    end
+
+    st.tick = st.tick + 1
+    if st.tick % CFG.SAVE_EVERY_TICKS == 0 then saveState(g, st) end
+    sendHud(player, st)
+    sendClock(player)
+    pcall(F.sendEmotion, player, st)
+    if st.tick % 6 == 1 then pcall(F.sendWorld, player, st); pcall(F.sendWeather, player) end
+end
+
+local function tick()
+    local dt = CFG.TICK_SECONDS / 3600
+    for _, player in ipairs(GetPlayersInWorld() or {}) do
+        F.isEn(player)
+        local ok, err = pcall(tickPlayer, player, dt)
+        if not ok then F.log("[SimsCraft] ошибка тика: " .. tostring(err)) end
+    end
+    SIM.ticks = (SIM.ticks or 0) + 1
+    if SIM.ticks % 15 == 0 then
+        for _, player in ipairs(GetPlayersInWorld() or {}) do if not isBot(player) then pcall(sendSky, player) end end
+    end
+    local tnow = now()
+    for k, req in pairs(PENDING) do if tnow - req.t > 120 then PENDING[k] = nil end end
+end
+
+-- быстрый тик: ходьба и занятия супруга, детей и NPC
+local function fastTick()
+    SIM.fast = (SIM.fast or 0) + 1
+    for _, player in ipairs(GetPlayersInWorld() or {}) do
+        if not isBot(player) then
+            F.isEn(player)
+            local st = S[player:GetGUIDLow()]
+            if st and not player:IsDead() then
+                local ok, err = pcall(F.tickSpouse, player, st)
+                if not ok then dbg(player, st, "spouse: " .. tostring(err)); F.log("[SimsCraft] супруг: " .. tostring(err)) end
+                ok, err = pcall(F.tickFamily, player, st)
+                if not ok then dbg(player, st, "family: " .. tostring(err)); F.log("[SimsCraft] дети: " .. tostring(err)) end
+                if SIM.fast % 2 == 0 then
+                    ok, err = pcall(F.tickLife, player, st)
+                    if not ok then dbg(player, st, "life: " .. tostring(err)); F.log("[SimsCraft] жизнь NPC: " .. tostring(err)) end
+                end
+                pcall(applyOutfit, player, st)
+                ok, err = pcall(F.tickGuest, player, st)
+                if not ok then F.log("[SimsCraft] гости: " .. tostring(err)) end
+            end
+        end
+    end
+    local ok, err = pcall(F.lifeStep)
+    if not ok then F.log("[SimsCraft] ошибка жизни NPC: " .. tostring(err)) end
+    pcall(F.tickHidden)
+end
+
+------------------------------------------------------------------------
+-- ЕДА
+------------------------------------------------------------------------
+local FOOD = {}
+local function onFoodUse(event, player, item, target)
+    if isBot(player) then return end
+    local st = S[player:GetGUIDLow()]
+    if not st or player:IsInCombat() then return end
+    local f = FOOD[item:GetEntry()]
+    if not f or cooldown(st, "eat", 5) then return end
+    if f.drink then
+        add(st, "hunger", 4); add(st, "bladder", -12); add(st, "fun", 1)
+    else
+        add(st, "hunger", (15 + math.min(25, f.lvl / 3)) * (hasTrait(st, "glutton") and 1.5 or 1)); add(st, "bladder", -4)
+    end
+    sendHud(player, st)
+end
+local function registerFood()
+    local q = WorldDBQuery("SELECT entry, spellcategory_1, ItemLevel FROM item_template WHERE class = 0 AND subclass = 5")
+    local count = 0
+    if q then
+        repeat
+            local entry = q:GetUInt32(0)
+            FOOD[entry] = { drink = (q:GetUInt32(1) == 59), lvl = q:GetUInt32(2) }
+            RegisterItemEvent(entry, 2, onFoodUse)
+            count = count + 1
+        until not q:NextRow()
+    end
+    F.log("[SimsCraft] еды и напитков: " .. count)
+end
+
+------------------------------------------------------------------------
+-- ДЕТИ: МЕНЮ
+------------------------------------------------------------------------
+TX.KID_ACTS = {
+    { id = 1, name = "Поиграть",            minS = 1, maxS = 3, cd = 60,  fun = 12, social = 4, energy = -4, happy = 15, skill = 0 },
+    { id = 2, name = "Обнять",              minS = 1, maxS = 5, cd = 30,  fun = 2, social = 8, energy = 0, happy = 8, skill = 0 },
+    { id = 3, name = "Почитать сказку",     minS = 1, maxS = 3, cd = 90,  fun = 5, social = 4, energy = -2, happy = 6, skill = 3 },
+    { id = 4, name = "Помочь с уроками",    minS = 3, maxS = 4, cd = 120, fun = -3, social = 3, energy = -3, happy = 2, skill = 6 },
+    { id = 5, name = "Покормить",           minS = 1, maxS = 2, cd = 60,  fun = 2, social = 3, energy = -1, happy = 10, skill = 0 },
+    { id = 6, name = "Поговорить по душам", minS = 4, maxS = 5, cd = 90,  fun = 3, social = 10, energy = 0, happy = 12, skill = 2 },
+}
+
+local function kidMenu(player, creature)
+    local k, ost, info = kidByCreature(creature)
+    player:GossipClearMenu()
+    if not k then player:GossipComplete(); return end
+    if info.owner ~= player:GetGUIDLow() then
+        player:GossipComplete()
+        return msg(player, "Это чужой ребёнок. Он стесняется и прячется за родителя.")
+    end
+    local stg = kidStage(k)
+    F.gAdd(player, 0, string.format("%s — %s. Счастье %d%%, развитие %d%%", k.name, TX.KID_STAGES[stg], math.floor(k.happy), math.floor(k.skill)), 1, 0)
+    for _, a in ipairs(TX.KID_ACTS) do
+        if stg >= a.minS and stg <= a.maxS then F.gAdd(player, 0, a.name, 1, a.id) end
+    end
+    if k.moved then
+        F.gAdd(player, 0, "Живёт своей семьёй с " .. (k.partner or "?") .. " (" .. (k.place or "") .. ")", 1, 0)
+        F.gAdd(player, 0, "Вернуться жить домой", 1, 94)
+    else
+        if stg >= 5 then
+            if k.wish or F.kidAdultDays(k) >= CFG.MOVE_OUT_WISH_DAYS then
+                F.gAdd(player, 0, "Благословить: пусть живёт своей семьёй", 1, 96)
+            end
+            if not k.stay then F.gAdd(player, 0, "Попросить остаться жить с нами", 1, 95)
+            else F.gAdd(player, 0, "Разрешить жить отдельно, когда захочет", 1, 93) end
+        end
+        if ost.kmode and ost.kmode[k.id] == "home" then
+            F.gAdd(player, 0, "Пойдём со мной!", 1, 98)
+        else
+            F.gAdd(player, 0, "Иди домой", 1, 99)
+        end
+    end
+    player:GossipSendMenu(CFG.NPC_TEXT, creature)
+end
+
+local function onKidHello(event, player, creature) kidMenu(player, creature); return true end
+local function onKidSelect(event, player, creature, sender, intid)
+    local k, st, info = kidByCreature(creature)
+    if not k or info.owner ~= player:GetGUIDLow() then return player:GossipComplete() end
+    if intid == 96 then
+        player:GossipComplete()
+        kidSay(creature, k, "Спасибо! Я буду часто заходить!")
+        return F.moveOut(player, st, k)
+    elseif intid == 95 or intid == 93 then
+        player:GossipComplete()
+        k.stay = intid == 95
+        if k.stay then k.wish = nil end
+        F.saveMoved(k)
+        return kidSay(creature, k, k.stay and "Хорошо, я останусь с вами." or "Спасибо, что доверяете мне!")
+    elseif intid == 94 then
+        player:GossipComplete()
+        F.despawnMoved(player, st, k)
+        k.moved, k.stay = false, true
+        F.saveMoved(k)
+        return msg(player, k.name .. " возвращается жить домой.")
+    end
+    if intid == 98 then
+        player:GossipComplete()
+        local a = st.kai[k.id]
+        if a then a.pending, a.sleeping = nil, nil end
+        creature:SetStandState(0); creature:EmoteState(0)
+        st.kmode[k.id] = "follow"
+        creature:MoveFollow(player, 1.8, math.pi * 0.7)
+        return kidSay(creature, k, "Иду!")
+    end
+    if intid == 99 then
+        player:GossipComplete()
+        sendKidHome(player, st, k)
+        return
+    end
+    for _, a in ipairs(TX.KID_ACTS) do
+        if a.id == intid then
+            local left = k.cd[a.id] and k.cd[a.id] - now()
+            if left and left > 0 then msg(player, k.name .. " пока не хочет. Подождите " .. left .. " сек.")
+            else
+                k.cd[a.id] = now() + a.cd
+                local mult = hasTrait(st, "family") and 2 or 1
+                add(st, "fun", a.fun * (a.fun > 0 and mult or 1)); add(st, "social", a.social * mult); add(st, "energy", a.energy)
+                k.happy = clamp(k.happy + a.happy, 0, 100)
+                k.skill = clamp(k.skill + a.skill, 0, 100)
+                if a.id == 4 then k.hwDone = true; k.hw = nil; msg(player, "Уроки сделаны! Оценка: " .. F.gradeLetter(k.grade)) end
+                F.count(player, st, "kidplay")
+                F.addMoodlet(player, st, "kidplay")
+                creature:PerformEmote(EMOTE.CHEER)
+                F.say(creature, k.name .. ": " .. pick({ "Ура!", "Ещё!", "Люблю тебя, " .. parentWord(player):lower() .. "!", "Здорово!" }), 0)
+                msg(player, string.format("%s: %s. Счастье ребёнка %d%%.", a.name, k.name, math.floor(k.happy)))
+                sendHud(player, st)
+            end
+            break
+        end
+    end
+    kidMenu(player, creature)
+end
+
+------------------------------------------------------------------------
+-- СУПРУГ: МЕНЮ
+------------------------------------------------------------------------
+TX.SPOUSE_MENU = {
+    { 1, "Поговорить", "talk" }, { 2, "Обнять", "hug" }, { 3, "Поцеловать", "kiss" },
+    { 4, "Романтический вечер", "woohoo" }, { 5, "Завести ребёнка", "baby" }, { 6, "Подарить подарок", "gift" },
+}
+onSpouseHello = function(event, player, creature)
+    local sp = SPOUSE_BY_LOW[creature:GetGUIDLow()]
+    player:GossipClearMenu()
+    if not sp or sp.owner ~= player:GetGUIDLow() then
+        player:GossipComplete()
+        return true
+    end
+    local st = S[player:GetGUIDLow()]
+    local r = st and st.rel[sp.key]
+    F.gAdd(player, 0, (r and r.name or "Супруг(а)") .. string.format(" — дружба %d, романтика %d", r and r.f or 0, r and r.r or 0), 1, 0)
+    for _, m in ipairs(TX.SPOUSE_MENU) do F.gAdd(player, 0, m[2], 1, m[1]) end
+    F.gAdd(player, 0, "Займись своими делами", 1, 99)
+    player:GossipSendMenu(CFG.NPC_TEXT, creature)
+    return true
+end
+onSpouseSelect = function(event, player, creature, sender, intid)
+    if not SPOUSE_BY_LOW[creature:GetGUIDLow()] then return end
+    player:GossipComplete()
+    local st = S[player:GetGUIDLow()]
+    if not st then return end
+    if intid == 99 then if st.spouse then st.spouse.till = 0; st.spouse.pending = nil; st.spouse.sleeping = nil end return end
+    for _, m in ipairs(TX.SPOUSE_MENU) do
+        if m[1] == intid then doSocial(player, st, m[3], creature) end
+    end
+end
+
+------------------------------------------------------------------------
+-- ХРАНИТЕЛЬ ЖИЗНИ
+------------------------------------------------------------------------
+function F.needsLine(st)
+    local parts = {}
+    for _, k in ipairs(NEEDS) do
+        local v = math.floor(st.needs[k] + 0.5)
+        local c = v >= 60 and "ff40ff40" or (v >= 25 and "ffffd100" or "ffff4040")
+        parts[#parts + 1] = TX.NEED_NAME[k] .. " |c" .. c .. v .. "|r"
+    end
+    return table.concat(parts, "  ")
+end
+
+function F.sortedRelations(st)
+    local list = {}
+    for _, r in pairs(st.rel) do list[#list + 1] = r end
+    table.sort(list, function(a, b) return (math.abs(a.f) + a.r) > (math.abs(b.f) + b.r) end)
+    return list
+end
+
+local function showMain(player, obj)
+    local st = S[player:GetGUIDLow()]
+    player:GossipClearMenu()
+    if not st then F.gAdd(player, 0, "Данные ещё загружаются...", 1, 99); return player:GossipSendMenu(CFG.NPC_TEXT, obj) end
+    local m = MOODS[st.mood]
+    F.gAdd(player, 0, F.needsLine(st), 1, 0)
+    F.gAdd(player, 0, "Настроение: |c" .. m.color .. m.name .. "|r, уют: " .. (st.comfort or 0), 1, 0)
+    F.gAdd(player, 1, "Каталог мебели, стройка и дома", 1, 6)
+    F.gAdd(player, 0, "Моя семья", 1, 7)
+    F.gAdd(player, 3, "Черты характера (" .. #st.traits .. "/" .. CFG.MAX_TRAITS .. ")", 1, 1)
+    F.gAdd(player, 6, "Карьера", 1, 2)
+    F.gAdd(player, 0, "Мои отношения", 1, 4)
+    F.gAdd(player, 2, "Сделать это место моим домом", 1, 8)
+    F.gAdd(player, 3, "Стремление и награды (" .. (st.sp or 0) .. " очков)", 1, 9)
+    F.gAdd(player, 1, "Перекусить (голод +35)", 1, 5, false, "Купить перекус?", levelPrice(player, CFG.QUICK_MEAL_PRICE))
+    player:GossipSendMenu(CFG.NPC_TEXT, obj)
+end
+
+function F.showTraits(player, obj, st)
+    player:GossipClearMenu()
+    for _, t in ipairs(TRAITS) do
+        local has = hasTrait(st, t.key)
+        local text = (has and "|cff40ff40[+]|r " or "[  ] ") .. t.name .. " — " .. t.desc
+        if has then F.gAdd(player, 3, text, 2, t.id, false, "Убрать черту «" .. t.name .. "»?", CFG.TRAIT_REMOVE_COST)
+        else F.gAdd(player, 3, text, 2, t.id) end
+    end
+    F.gAdd(player, 0, "<< Назад", 1, 0)
+    player:GossipSendMenu(CFG.NPC_TEXT, obj)
+end
+
+function F.showCareer(player, obj, st)
+    player:GossipClearMenu()
+    local c = CAREERS[st.career]
+    if not c then
+        F.gAdd(player, 0, "Вы безработный. Выберите карьеру:", 3, 0)
+        for i, cc in ipairs(CAREERS) do F.gAdd(player, 6, cc.name .. " — начать с должности «" .. cc.ranks[1] .. "»", 3, 100 + i) end
+    else
+        F.gAdd(player, 0, string.format("%s: %s (ранг %d/5), успеваемость %d%%, смен: %d",
+            c.name, c.ranks[st.rank], st.rank, math.min(st.perf, 100), st.shifts), 3, 0)
+        if st.work then
+            F.gAdd(player, 0, "Вы на смене. Осталось " .. math.max(0, st.work - now()) .. " сек.", 3, 0)
+        else
+            F.gAdd(player, 6, string.format("Выйти на смену (%d мин, около %s)", math.floor(CFG.SHIFT_SECONDS / 60),
+                money(TX.CAREER_PAY[st.rank] * player:GetLevel() * CFG.PAY_MULT)), 3, 1)
+        end
+        F.gAdd(player, 0, "Уволиться", 3, 2, false, "Уволиться? Ранг и успеваемость будут потеряны.")
+    end
+    F.gAdd(player, 0, "<< Назад", 1, 0)
+    player:GossipSendMenu(CFG.NPC_TEXT, obj)
+end
+
+function F.showRelations(player, obj, st)
+    player:GossipClearMenu()
+    local list = F.sortedRelations(st)
+    if #list == 0 then F.gAdd(player, 0, "Вы пока ни с кем не знакомы. Выделите кого-нибудь и откройте окно «Общение».", 5, 0) end
+    for i = 1, math.min(#list, 12) do
+        local r = list[i]
+        F.gAdd(player, 0, string.format("%s — %s (%d / %d)", r.name, relTitle(r), r.f, r.r), 5, 0)
+    end
+    F.gAdd(player, 0, "<< Назад", 1, 0)
+    player:GossipSendMenu(CFG.NPC_TEXT, obj)
+end
+
+local function goHome(player, st)
+    if not st.home then return msg(player, "У вас нет дома. Купите дом или мебель в каталоге.") end
+    if player:IsInCombat() then return msg(player, "Нельзя во время боя.") end
+    local cd = cooldown(st, "hometp", CFG.HOME_TP_COOLDOWN)
+    if cd then return msg(player, "Телепорт домой будет доступен через " .. math.ceil(cd / 60) .. " мин.") end
+    despawnAllKids(player, st)
+    player:Teleport(unpack(st.home))
+end
+
+local function setHome(player, st)
+    if not inOpenWorld(player) then return msg(player, "Дом можно назначить только в открытом мире.") end
+    local x, y, z, o = player:GetLocation()
+    st.home = { player:GetMapId(), x, y, z, o }
+    saveState(player:GetGUIDLow(), st)
+    msg(player, "Теперь это ваш дом.")
+end
+
+local function onNpcHello(event, player, obj) showMain(player, obj); return true end
+local function onNpcSelect(event, player, obj, sender, intid, code, menuId)
+    local st = S[player:GetGUIDLow()]
+    if not st or intid == 99 then return player:GossipComplete() end
+    if sender == 1 then
+        if intid == 1 then return F.showTraits(player, obj, st)
+        elseif intid == 2 then return F.showCareer(player, obj, st)
+        elseif intid == 4 then return F.showRelations(player, obj, st)
+        elseif intid == 5 then
+            local price = levelPrice(player, CFG.QUICK_MEAL_PRICE)
+            if player:GetCoinage() >= price then
+                player:ModifyMoney(-price); add(st, "hunger", 35)
+                msg(player, "Хранитель угостил вас горячей похлёбкой.")
+                sendHud(player, st)
+            else msg(player, "Не хватает денег.") end
+        elseif intid == 6 then
+            player:GossipComplete(); sendCatalog(player); send(player, "OPEN;CAT")
+            return msg(player, "Каталог открыт в окне SimsCraft. (Нужен аддон SimsCraft.)")
+        elseif intid == 7 then
+            player:GossipComplete(); sendFamily(player, st); return send(player, "OPEN;FAM")
+        elseif intid == 8 then setHome(player, st)
+        elseif intid == 9 then return F.aspMenu(player, st)
+        end
+        return showMain(player, obj)
+    elseif sender == 2 then
+        local t = TRAITS[intid]
+        if t then
+            if hasTrait(st, t.key) then
+                if player:GetCoinage() < CFG.TRAIT_REMOVE_COST then msg(player, "Не хватает денег, чтобы убрать черту.")
+                else
+                    player:ModifyMoney(-CFG.TRAIT_REMOVE_COST)
+                    for i, id in ipairs(st.traits) do if id == t.id then table.remove(st.traits, i) break end end
+                    msg(player, "Черта «" .. t.name .. "» убрана.")
+                end
+            elseif #st.traits >= CFG.MAX_TRAITS then
+                msg(player, "У вас уже " .. CFG.MAX_TRAITS .. " черты. Сначала уберите одну.")
+            else
+                st.traits[#st.traits + 1] = t.id
+                msg(player, "Новая черта: |cffffd100" .. t.name .. "|r — " .. t.desc .. ".")
+            end
+            st.mood = computeMood(st)
+            saveState(player:GetGUIDLow(), st)
+            sendHud(player, st)
+        end
+        return F.showTraits(player, obj, st)
+    elseif sender == 3 then
+        if intid > 100 and CAREERS[intid - 100] then
+            st.career, st.rank, st.perf = intid - 100, 1, 0
+            msg(player, "Вы приняты: |cffffd100" .. CAREERS[st.career].name .. "|r, должность «" .. CAREERS[st.career].ranks[1] .. "».")
+            saveState(player:GetGUIDLow(), st)
+        elseif intid == 1 then
+            startShift(player, st); sendHud(player, st)
+            return player:GossipComplete()
+        elseif intid == 2 then
+            F.jobClear(player, st)
+            st.career, st.rank, st.perf, st.work = 0, 1, 0, nil
+            msg(player, "Вы уволились.")
+            saveState(player:GetGUIDLow(), st)
+        end
+        return F.showCareer(player, obj, st)
+    elseif sender == 5 then
+        return F.showRelations(player, obj, st)
+    end
+    showMain(player, obj)
+end
+
+------------------------------------------------------------------------
+-- КОМАНДЫ .sims
+------------------------------------------------------------------------
+TX.HELP = {
+    ".sims — состояние; .sims rel — отношения; .sims family — семья",
+    ".sims shop — каталог; .sims move / .sims sell — переставить / продать ближайший свой предмет",
+    ".sims home / .sims sethome — дом; .sims kids — позвать детей; .sims work — смена",
+    "Окно «Общение» в аддоне: выделите кого-нибудь и выбирайте действие.",
+    ".sims time — игровые часы; ГМ-отладка: .sims gm",
+}
+
+local function onCommand(event, player, command)
+    if not player then return end
+    local args = {}
+    for w in command:gsub("^[%.!]", ""):gmatch("%S+") do args[#args + 1] = w end
+    if not args[1] or args[1]:lower() ~= "sims" then return end
+    local st = S[player:GetGUIDLow()]
+    if not st then msg(player, "Данные не загружены."); return false end
+    local sub = (args[2] or ""):lower()
+    local isGM = player:GetGMRank() >= 2
+    if sub == "" or sub == "status" then
+        local m = MOODS[st.mood]
+        msg(player, F.needsLine(st))
+        local tn = {}
+        for _, id in ipairs(st.traits) do tn[#tn + 1] = TRAITS[id].name end
+        msg(player, "Настроение: |c" .. m.color .. m.name .. "|r. Уют: " .. (st.comfort or 0) .. ". Черты: " .. (#tn > 0 and table.concat(tn, ", ") or "нет"))
+        local c = CAREERS[st.career]
+        msg(player, c and ("Карьера: " .. c.name .. ", " .. c.ranks[st.rank] .. " (" .. math.min(st.perf, 100) .. "%)") or "Карьера: нет")
+    elseif sub == "help" then for _, l in ipairs(TX.HELP) do msg(player, l) end
+    elseif sub == "rel" then
+        local list = F.sortedRelations(st)
+        if #list == 0 then msg(player, "Отношений пока нет.") end
+        for i = 1, math.min(#list, 10) do local r = list[i]; msg(player, string.format("%s — %s (%d / %d)", r.name, relTitle(r), r.f, r.r)) end
+    elseif sub == "family" then
+        local _, pr = findPartner(st)
+        msg(player, pr and ("Партнёр: " .. pr.name .. " (" .. TX.STATUS_NAME[pr.status] .. ")") or "Партнёра нет.")
+        if st.preg then msg(player, "Ребёнок появится через " .. math.ceil(pregLeft(st) / 60) .. " мин.") end
+        for _, k in ipairs(st.kids) do msg(player, string.format("%s — %s, счастье %d%%", k.name, TX.KID_STAGES[kidStage(k)], math.floor(k.happy))) end
+        sendFamily(player, st)
+    elseif sub == "kids" then callKids(player, st)
+    elseif sub == "shop" then sendCatalog(player); send(player, "OPEN;CAT")
+    elseif sub == "move" then moveNearest(player, st)
+    elseif sub == "sell" then sellNearest(player, st)
+    elseif sub == "home" then goHome(player, st)
+    elseif sub == "sethome" then setHome(player, st)
+    elseif sub == "work" then startShift(player, st)
+    elseif sub == "set" and isGM then
+        local need, val = (args[3] or ""):lower(), tonumber(args[4] or "")
+        if st.needs[need] and val then st.needs[need] = clamp(val, 0, 100); msg(player, need .. " = " .. val)
+        else msg(player, "Использование: .sims set <hunger|energy|hygiene|fun|social|bladder> <0-100>") end
+    elseif sub == "fill" and isGM then
+        for _, k in ipairs(NEEDS) do st.needs[k] = 100 end
+        msg(player, "Все потребности заполнены.")
+    elseif sub == "npc" and isGM then
+        local x, y, z, o = player:GetLocation()
+        local c = PerformIngameSpawn(1, CFG.NPC_ENTRY, player:GetMapId(), player:GetInstanceId(), x, y, z, o, true)
+        msg(player, c and "Хранитель жизни поставлен и сохранён." or "Не удалось: проверьте, что world-SQL установлен.")
+    elseif sub == "birth" and isGM then
+        if st.preg then st.preg.till = now(); msg(player, "Роды ускорены.") else msg(player, "Ребёнка не ждут.") end
+    elseif sub == "age" and isGM then
+        local dd = tonumber(args[3] or "") or 1
+        for _, k in ipairs(st.kids) do
+            k.born = math.floor(k.born - dd * daySeconds())
+            CharDBExecute(string.format("UPDATE character_sims_children SET born = %d WHERE id = %d", k.born, k.id))
+        end
+        msg(player, "Дети повзрослели на " .. dd .. " игр. дн.")
+        for _, k in ipairs(st.kids) do msg(player, k.name .. " — " .. TX.KID_STAGES[kidStage(k)]) end
+    elseif sub == "time" then
+        if isGM and args[3] then
+            local h, m = (args[3] or ""):match("^(%d+):?(%d*)$")
+            h, m = tonumber(h), tonumber(m) or 0
+            if h and h < 24 and m < 60 then setSimTime(h * 3600 + m * 60); msg(player, "Игровое время: " .. clockText())
+            else msg(player, "Использование: .sims time ЧЧ[:ММ]") end
+        else
+            msg(player, "Игровое время: |cffffd100" .. clockText() .. "|r. Сутки длятся " .. CFG.DAY_MINUTES .. " мин реального времени.")
+        end
+    elseif sub == "skill" and isGM then
+        local key, lvl = (args[3] or ""):lower(), tonumber(args[4] or "")
+        if TX.SKILL_NAME[key] and lvl and lvl >= 0 and lvl <= 10 then
+            st.skills[key] = math.max(0, (TX.SKILL_XP[lvl] or 0) - 0.01)
+            F.skillGain(player, st, key, 0.02)
+            msg(player, TX.SKILL_NAME[key] .. ": уровень " .. F.skillLevel(st, key))
+        else
+            local t = {}
+            for _, x in ipairs(TX.SKILLS) do t[#t + 1] = x.k end
+            msg(player, "Использование: .sims skill <навык> <0-10>. Навыки: " .. table.concat(t, ", "))
+        end
+    elseif sub == "sp" and isGM then
+        st.sp = (st.sp or 0) + (tonumber(args[3] or "") or 1000)
+        msg(player, "Очки удовлетворения: " .. st.sp); F.sendAsp(player, st)
+    elseif sub == "phone" then F.phoneMenu(player, st)
+    elseif sub == "daylen" and isGM then
+        local v = tonumber(args[3] or "")
+        if v and v >= 2 and v <= 1440 then setDayLength(v); msg(player, "Игровые сутки теперь длятся " .. v .. " мин. Время: " .. clockText())
+        else msg(player, "Использование: .sims daylen <минут на игровые сутки, 2..1440> (сейчас " .. CFG.DAY_MINUTES .. ")") end
+    elseif sub == "walls" then
+        local m = (args[3] or ""):lower()
+        if m == "auto" or m == "down" or m == "up" then st.walls = m end
+        tickWalls(player, st)
+        msg(player, "Стены дома: " .. st.walls .. " (auto / down / up)")
+    -- ---------- отладка (ГМ) ----------
+    elseif sub == "sleepx" and isGM then
+        st.gm.sleepx = clamp(tonumber(args[3] or "") or 1, 0, 100)
+        msg(player, "Восстановление энергии во сне ×" .. st.gm.sleepx)
+    elseif sub == "timex" and isGM then
+        st.gm.timex = clamp(tonumber(args[3] or "") or 1, 0, 100)
+        msg(player, "Скорость потребностей ×" .. st.gm.timex)
+    elseif sub == "freeze" and isGM then
+        st.gm.freeze = not st.gm.freeze
+        msg(player, "Потребности " .. (st.gm.freeze and "заморожены" or "снова идут"))
+    elseif sub == "fast" and isGM then
+        st.gm.fast = not st.gm.fast
+        msg(player, "Ограничения скорости отношений " .. (st.gm.fast and "|cffff8080ОТКЛЮЧЕНЫ|r" or "включены"))
+    elseif sub == "debug" and isGM then
+        st.gm.debug = not st.gm.debug
+        msg(player, "Отладочные сообщения " .. (st.gm.debug and "включены" or "выключены"))
+    elseif sub == "relset" and isGM then
+        local t = player:GetSelection()
+        local fv, rv = tonumber(args[3] or ""), tonumber(args[4] or "")
+        if not t or (t:GetTypeId() ~= 3 and t:GetTypeId() ~= 4) or not fv then
+            msg(player, "Выделите цель: .sims relset <дружба -100..100> [романтика 0..100]")
+        else
+            local key = keyOf(t)
+            local r = getRel(st, key, nameOf(st, t))
+            rememberLook(st, key, t)
+            r.f, r.r = clamp(fv, -100, 100), clamp(rv or r.r, 0, 100)
+            r.met = now() - 30 * 86400
+            saveRelation(player:GetGUIDLow(), key, r)
+            msg(player, r.name .. ": дружба " .. r.f .. ", романтика " .. r.r)
+        end
+    elseif sub == "partner" and isGM then
+        local t = player:GetSelection()
+        local v = (args[3] or ""):lower()
+        if v == "none" then v = "" end
+        if not t or (t:GetTypeId() ~= 3 and t:GetTypeId() ~= 4) or not (v == "" or v == "dating" or v == "married" or v == "ex") then
+            msg(player, "Выделите цель: .sims partner <dating|married|ex|none>")
+        else
+            local key = keyOf(t)
+            rememberLook(st, key, t)
+            if v ~= "" and st.partnerKey and st.partnerKey ~= key then setStatus(player, st, st.partnerKey, nil, "ex") end
+            setStatus(player, st, key, nameOf(st, t), v)
+            st.rel[key].since = now() - 30 * 86400
+            saveRelation(player:GetGUIDLow(), key, st.rel[key])
+            msg(player, "Статус с " .. st.rel[key].name .. ": " .. (v == "" and "нет" or v))
+        end
+    elseif sub == "life" and isGM then
+        local v = (args[3] or ""):lower()
+        if v == "off" then LIFE_OFF = true; F.lifeStopAll() elseif v == "on" then LIFE_OFF = false
+        elseif v == "now" then LIFE_OFF = false; for _ = 1, 3 do F.tickLife(player, st) end end
+        local cnt = 0
+        for _ in pairs(LIFE) do cnt = cnt + 1 end
+        msg(player, "Живой мир: " .. (LIFE_OFF and "выключен" or "включён") .. ", занятых NPC: " .. cnt)
+    elseif sub == "spouse" and isGM then
+        F.despawnSpouse(player, st)
+        F.tickSpouse(player, st, true)
+        msg(player, st.spouse and "Супруг(а) появился(ась) у дома." or "Нужен брак (.sims partner married на цели) и дом.")
+    elseif sub == "tick" and isGM then
+        tickPlayer(player, CFG.TICK_SECONDS / 3600)
+        msg(player, "Тик выполнен.")
+    elseif sub == "info" and isGM then
+        msg(player, string.format("stand=%d sleeping=%s cam=%s walls=%s sleepx=%s timex=%s freeze=%s fast=%s",
+            player:GetStandState(), tostring(st.sleeping), st.cam, st.walls, st.gm.sleepx, st.gm.timex,
+            tostring(st.gm.freeze), tostring(st.gm.fast)))
+        msg(player, string.format("предметов=%d дом=%s партнёр=%s дети=%d", #st.furn, st.home and "есть" or "нет",
+            tostring(st.partnerKey), #st.kids))
+    elseif sub == "gm" and isGM then
+        for _, l in ipairs({ ".sims sleepx N — сон восстанавливает в N раз быстрее", ".sims timex N — потребности идут в N раз быстрее",
+            ".sims freeze — заморозить потребности", ".sims fast — без ограничений скорости отношений",
+            ".sims relset F R / .sims partner dating|married|none — на выделенной цели", ".sims set <нужда> N, .sims fill",
+            ".sims birth, .sims age N — роды сейчас / дети старше на N игровых дней",
+            ".sims time ЧЧ:ММ — перевести игровые часы, .sims daylen N — длина игровых суток в минутах",
+            ".sims skill <навык> <уровень> — задать навык, .sims sp N — очки удовлетворения, .sims phone — телефон", ".sims spouse — позвать супруга домой", ".sims life on|off|now — живые NPC",
+            ".sims tick, .sims info, .sims debug — отладка", ".sims npc — поставить Хранителя жизни" }) do msg(player, l) end
+    else
+        for _, l in ipairs(TX.HELP) do msg(player, l) end
+    end
+    st.mood = computeMood(st)
+    sendHud(player, st)
+    return false
+end
+
+------------------------------------------------------------------------
+-- АДДОН -> СЕРВЕР
+------------------------------------------------------------------------
+local function cleanName(s)
+    s = tostring(s or ""):gsub("[%c;|\"'\\%%]", ""):gsub("^%s+", ""):gsub("%s+$", "")
+    if #s < 2 or #s > 40 then return nil end
+    return s
+end
+
+local function onAddonMessage(event, sender, msgType, prefix, text, target)
+    if prefix ~= CFG.ADDON_PREFIX or not sender then return end
+    local st = S[sender:GetGUIDLow()]
+    if not st then return false end
+    local a = split(text, ";")
+    local cmd = a[1]
+    F.isEn(sender)
+    if cmd == "LOC" then F.LOC[sender:GetGUIDLow()] = (a[2] or "enUS") ~= "ruRU"; F.CUR = F.LOC[sender:GetGUIDLow()]; return
+    elseif cmd == "SYNC" then sendHud(sender, st)
+    elseif cmd == "WORK" then startShift(sender, st); sendHud(sender, st)
+    elseif cmd == "HOME" then goHome(sender, st)
+    elseif cmd == "CAT" then sendCatalog(sender)
+    elseif cmd == "BUY" then
+        local it = CATALOG[tonumber(a[2] or "") or 0]
+        if it then startPlacement(sender, st, it) end
+    elseif cmd == "PM" then nudge(sender, st, a[2], a[3])
+    elseif cmd == "PO" then finishPlacement(sender, st, true)
+    elseif cmd == "PC" then finishPlacement(sender, st, false)
+    elseif cmd == "MOVE" then moveNearest(sender, st)
+    elseif cmd == "SELL" then sellNearest(sender, st)
+    elseif cmd == "REL" then sendRel(sender, st)
+    elseif cmd == "SOC" then doSocial(sender, st, a[2]); sendRel(sender, st); sendHud(sender, st)
+    elseif cmd == "ANS" then answerRequest(sender, a[2] == "1")
+    elseif cmd == "FAM" then
+        if a[2] == "call" then callKids(sender, st)
+        elseif a[2] == "home" then sendKidsHome(sender, st) end
+        sendFamily(sender, st)
+    elseif cmd == "USE" then useNearest(sender, st)
+    elseif cmd == "PHONE" then F.phoneMenu(sender, st)
+    elseif cmd == "SETHOME" then setHome(sender, st)
+    elseif cmd == "TRACE" then
+        -- аддон узнал расу выбранного NPC по его модели — запоминаем (нужна, чтобы дети были в одного из родителей)
+        local race, t = tonumber(a[2] or ""), sender:GetSelection()
+        if race and TX.ADULT_RACE[race] and t and t:GetTypeId() == 3 then
+            local key = "race:" .. keyOf(t)
+            if WORLDV[key] ~= tostring(race) then saveWorldValue(key, race) end
+        end
+    elseif cmd == "ASPM" then F.aspMenu(sender, st)
+    elseif cmd == "ASP" then F.setAspiration(sender, st, a[2])
+    elseif cmd == "RWD" then F.buyReward(sender, st, a[2])
+    elseif cmd == "INFO" then
+        F.sendSkills(sender, st); F.sendAsp(sender, st); F.sendEmotion(sender, st); F.sendWorld(sender, st); sendFamily(sender, st)
+        F.sendRelList(sender, st)
+    elseif cmd == "SPOTS" then spotsMenu(sender, st)
+    elseif cmd == "SPOT" then markSpot(sender, st, a[2])
+    elseif cmd == "WARDROBE" then wardrobeMenu(sender, st)
+    elseif cmd == "CAM" then
+        st.cam = a[2] or "normal"
+        tickWalls(sender, st)
+    elseif cmd == "WALLS" then
+        if a[2] == "auto" or a[2] == "down" or a[2] == "up" then st.walls = a[2] end
+        tickWalls(sender, st)
+        st.inside = nil
+        tickWalls(sender, st)
+        send(sender, "WALLS;" .. st.walls)
+    elseif cmd == "CNAME" then
+        local id, name = tonumber(a[2] or ""), cleanName(a[3])
+        if not name then return msg(sender, "Имя должно быть от 2 до 20 букв.") end
+        for _, k in ipairs(st.kids) do
+            if k.id == id then
+                k.name = name
+                CharDBExecute(string.format("UPDATE character_sims_children SET name = '%s' WHERE id = %d", sqlEsc(name), id))
+                msg(sender, "Теперь ребёнка зовут |cffffd100" .. name .. "|r.")
+            end
+        end
+        sendFamily(sender, st)
+    end
+    return false
+end
+
+------------------------------------------------------------------------
+-- ВХОД / ВЫХОД
+------------------------------------------------------------------------
+local function onLogin(event, player)
+    if isBot(player) then return end
+    local st = loadState(player)
+    if st.isNew then
+        st.isNew = nil
+        saveState(player:GetGUIDLow(), st)
+        msg(player, "|cffffd100Добро пожаловать в SimsCraft!|r У вашего героя теперь есть потребности, настроение и личная жизнь.")
+        msg(player, "Откройте окно SimsCraft (|cffffd100/scui|r) или найдите |cffffd100Хранителя жизни|r. Справка: |cffffd100.sims help|r")
+    end
+    player:RegisterEvent(function(_, _, _, p)
+        local s = S[p:GetGUIDLow()]
+        if s then
+            sendHud(p, s); sendClock(p)
+            pcall(F.sendSkills, p, s); pcall(F.sendAsp, p, s); pcall(F.sendEmotion, p, s); pcall(F.sendWorld, p, s); pcall(F.sendWeather, p)
+        end
+        pcall(sendSky, p)
+    end, 3000, 1)
+end
+
+local function onLogout(event, player)
+    local g = player:GetGUIDLow()
+    local st = S[g]
+    if not st then return end
+    if st.pl then finishPlacement(player, st, false) end
+    pcall(F.jobClear, player, st)
+    if type(st.bath) == "table" then
+        for _, g in ipairs(st.bath) do local o = player:GetMap():GetWorldObject(g); if o then o:RemoveFromWorld(false) end end
+    end
+    despawnAllKids(player, st)
+    pcall(F.despawnSpouse, player, st)
+    pcall(F.restorePost, player, st)
+    pcall(showAllHouses, player, st)
+    if st.work then msg(player, "Вы ушли со смены раньше времени — зарплата не начислена.") end
+    st.work, st.sleeping = nil, nil
+    saveState(g, st)
+    S[g] = nil
+    PENDING[g] = nil
+end
+
+local function onSave(event, player)
+    local st = S[player:GetGUIDLow()]
+    if st then saveState(player:GetGUIDLow(), st) end
+end
+
+local function onGiveXP(event, player, amount, victim)
+    local st = S[player:GetGUIDLow()]
+    if not st then return end
+    local m = MOODS[st.mood].xp
+    if m ~= 1 then return math.floor(amount * m + 0.5) end
+end
+
+local function onStateClose()
+    for _, p in ipairs(GetPlayersInWorld() or {}) do
+        local st = S[p:GetGUIDLow()]
+        if st then
+            if st.pl then pcall(finishPlacement, p, st, false) end
+            pcall(F.jobClear, p, st)
+            pcall(despawnAllKids, p, st)
+            pcall(F.despawnSpouse, p, st)
+            pcall(F.restorePost, p, st)
+            pcall(showAllHouses, p, st)
+        end
+    end
+    F.lifeStopAll()
+    for g, st in pairs(S) do saveState(g, st) end
+end
+
+------------------------------------------------------------------------
+-- РЕГИСТРАЦИЯ
+------------------------------------------------------------------------
+-- защита: если база персонажей не обновлена, запросы к новым колонкам выключили бы весь сервер — тогда мод не запускается
+do
+    local function hasCol(t, c)
+        return CharDBQuery("SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '"
+            .. t .. "' AND COLUMN_NAME = '" .. c .. "' LIMIT 1") ~= nil
+    end
+    local missing = {}
+    for _, tc in ipairs({ { "character_sims", "power_off" }, { "character_sims", "outfits" }, { "character_sims_children", "grade" },
+        { "character_sims_children", "stay" }, { "character_sims_relations", "wo" }, { "character_sims_furniture", "refund" },
+        { "character_sims_skills", "xp" }, { "character_sims_spots", "kind" }, { "character_sims_world", "v" } }) do
+        if not hasCol(tc[1], tc[2]) then missing[#missing + 1] = tc[1] .. "." .. tc[2] end
+    end
+    if #missing > 0 then
+        F.log("[SimsCraft] ОШИБКА: база персонажей не обновлена (нет " .. table.concat(missing, ", ") .. "). Запустите «Обновить SimsCraft». Мод выключен.")
+        return
+    end
+end
+
+RegisterPlayerEvent(3, onLogin)
+RegisterPlayerEvent(4, onLogout)
+RegisterPlayerEvent(12, onGiveXP)
+RegisterPlayerEvent(24, onTextEmote)
+RegisterPlayerEvent(25, onSave)
+RegisterPlayerEvent(42, onCommand)
+RegisterPlayerEvent(32, function(event, player, item, count)
+    local st = S[player:GetGUIDLow()]
+    if not st or not item or not TX.FISH[item:GetEntry()] then return end
+    F.skillGain(player, st, "fishing", 15)
+    F.count(player, st, "fish")
+end)
+RegisterPlayerEvent(7, function(event, killer, killed)
+    local st = S[killer:GetGUIDLow()]
+    if st and not cooldown(st, "victory", 600) then F.addMoodlet(killer, st, "victory") end
+end)
+RegisterServerEvent(16, onStateClose)
+RegisterServerEvent(30, onAddonMessage)
+RegisterPlayerGossipEvent(MENU_PLAYER, 2, onPlayerMenu)
+for entry in pairs(JOB_ENTRY) do RegisterGameObjectGossipEvent(entry, 1, onJobObject) end
+
+RegisterCreatureGossipEvent(CFG.NPC_ENTRY, 1, onNpcHello)
+RegisterCreatureGossipEvent(CFG.NPC_ENTRY, 2, onNpcSelect)
+for entry in pairs(KID_ENTRIES) do
+    RegisterCreatureGossipEvent(entry, 1, onKidHello)
+    RegisterCreatureGossipEvent(entry, 2, onKidSelect)
+end
+for entry in pairs(SPOUSE_ENTRIES) do
+    RegisterCreatureGossipEvent(entry, 1, onSpouseHello)
+    RegisterCreatureGossipEvent(entry, 2, onSpouseSelect)
+end
+for _, it in ipairs(CATALOG) do
+    if it.kind and FURN_ACTION[it.kind] then RegisterGameObjectGossipEvent(it.entry, 1, onFurnitureHello) end
+end
+
+registerFood()
+loadWorldClock()
+TX.FISH = {}
+do
+    local q = WorldDBQuery("SELECT entry FROM item_template WHERE class = 7 AND subclass = 8 AND (name LIKE 'Raw %' OR name LIKE '%Fish%' OR name LIKE '%Snapper%' OR name LIKE '%Salmon%')")
+    if q then repeat TX.FISH[q:GetUInt32(0)] = true until not q:NextRow() end
+end
+do
+    local q = WorldDBQuery("SELECT entry FROM gameobject_template WHERE type = 7")
+    local n = 0
+    if q then
+        repeat
+            local e = q:GetUInt32(0)
+            if not ITEM_BY_ENTRY[e] then CHAIR_ENTRIES[e] = true; n = n + 1 end
+        until not q:NextRow()
+    end
+    F.log("[SimsCraft] стульев и скамеек в мире: " .. n)
+end
+CreateLuaEvent(tick, CFG.TICK_SECONDS * 1000, 0)
+CreateLuaEvent(fastTick, CFG.FAST_TICK_MS, 0)
+for _, p in ipairs(GetPlayersInWorld() or {}) do
+    if not isBot(p) then loadState(p) end
+end
+F.log("[SimsCraft] 1.0.0 загружен: предметов в каталоге " .. #CATALOG .. ", игровое время " .. clockText() .. ".")

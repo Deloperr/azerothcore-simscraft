@@ -1,0 +1,5 @@
+<Bindings>
+    <Binding name="SIMSCRAFT_TOGGLE" header="SIMSCRAFT">SimsCraftUI_Toggle()</Binding>
+    <Binding name="SIMSCRAFT_USE">SimsCraftAPI.send("USE")</Binding>
+    <Binding name="SIMSCRAFT_PHONE">SimsCraftAPI.send("PHONE")</Binding>
+</Bindings>

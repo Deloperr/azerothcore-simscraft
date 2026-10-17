@@ -1,0 +1,384 @@
+Голод	Hunger
+Ешьте еду, готовьте на плите, обедайте за столом.	Eat food, cook on the stove, have lunch at the table.
+Энергия	Energy
+Сидите, спите (/sleep) или ложитесь в кровать.	Sit, sleep (/sleep) or lie down in a bed.
+Гигиена	Hygiene
+Плавайте, примите ванну или умойтесь.	Swim, take a bath or wash up.
+Веселье	Fun
+Сражайтесь, танцуйте, читайте, играйте с детьми.	Fight, dance, read, play with the kids.
+Общение	Social
+Окно «Общение», группа, семья.	The "Social" window, a group, family.
+Туалет	Bladder
+Воспользуйтесь уборной.	Use the toilet.
+Вдохновлён	Inspired
+Счастлив	Happy
+Спокоен	Fine
+Не в духе	Grumpy
+Несчастен	Miserable
+Обжора	Glutton
+Энергичный	Energetic
+Неряха	Slob
+Душа компании	Life of the party
+Одиночка	Loner
+Активный	Active
+Чистюля	Neat
+Романтик	Romantic
+Трудоголик	Workaholic
+Лентяй	Lazy
+Книжный червь	Bookworm
+Семьянин	Family-oriented
+Кулинария	Culinary
+Поварёнок	Kitchen helper
+Помощник повара	Assistant cook
+Повар	Cook
+Шеф-повар	Head chef
+Легенда кухни Азерота	Legend of Azeroth's kitchens
+Стража	Guard
+Новобранец	Recruit
+Стражник	Guardsman
+Сержант	Sergeant
+Капитан стражи	Guard captain
+Командор	Commander
+Магия	Magic
+Ученик	Apprentice
+Подмастерье	Journeyman
+Чародей	Enchanter
+Магистр	Magister
+Архимаг	Archmage
+Торговля	Business
+Подсобник	Stock hand
+Лоточник	Peddler
+Торговец	Trader
+Купец	Merchant
+Торговый барон	Trade baron
+Искусство	Arts
+Уличный музыкант	Street musician
+Менестрель	Minstrel
+Бард	Bard
+Маэстро	Maestro
+Звезда таверн	Tavern star
+Медицина	Medicine
+Санитар	Orderly
+Медбрат	Nurse
+Лекарь	Physician
+Целитель	Healer
+Главный целитель	Chief healer
+Спорт	Athletics
+Новичок	Rookie
+Атлет	Athlete
+Чемпион города	City champion
+Звезда арены	Arena star
+Легенда Азерота	Legend of Azeroth
+Младенец	Infant
+Малыш	Toddler
+Ребёнок	Child
+Подросток	Teen
+Взрослый	Adult
+Поболтать	Chat
+Пошутить	Joke
+Комплимент	Compliment
+Обнять	Hug
+Подарок	Gift
+Флиртовать	Flirt
+Поцеловать	Kiss
+Встречаться?	Ask out?
+Предложение	Propose
+Романт. вечер	Romantic evening
+Завести ребёнка	Have a baby
+Поспорить	Argue
+Оскорбить	Insult
+Пощёчина	Slap
+Расстаться	Break up
+|cffffd700з|r 	|cffffd700g|r 
+|cffc7c7cfс|r 	|cffc7c7cfs|r 
+|cffeda55fм|r	|cffeda55fc|r
+Камера: обычная	Camera: normal
+Камера: сверху	Camera: top
+Камера: из-за плеча	Camera: over the shoulder
+Камера: от 1-го лица	Camera: first person
+Камера	Camera
+Сверху	Top
+Плечо	Shoulder
+1-е лицо	1st person
+Дом: А	House: A
+Без дома	No house
+Дом	House
+ожидание сервера...	waiting for server...
+Сон	Sleep
+Лечь спать прямо здесь	Lie down and sleep right here
+Танец	Dance
+Потанцевать: +веселье	Dance: +fun
+Смена	Shift
+Выйти на рабочую смену	Go to a work shift
+Домой	Home
+Телепорт домой (откат 30 мин)	Teleport home (30 min cooldown)
+Действие	Use
+Использовать ближайшую мебель (свою или встроенную в готовый дом)	Use the nearest furniture (your own or built into a ready-made house)
+Позвать	Call
+Телефон	Phone
+Каталог	Catalog
+Мебель, стройка и готовые дома	Furniture, building and ready-made houses
+Взаимодействие с выделенным персонажем	Interact with the selected character
+Семья	Family
+Партнёр и дети	Partner and children
+Сменить камеру	Change camera
+Вещи	Items
+Переставить ближайший свой предмет	Move your nearest item
+Обустр.	Furnish
+Обустроить готовый дом: отметить встроенную кровать, плиту, ванну и т. д., чтобы ими можно было пользоваться	Furnish a ready-made house: mark the built-in bed, stove, bathtub, etc. so you can use them
+|cffffd100Карьера:|r нет (Хранитель жизни)	|cffffd100Career:|r none (Keeper of Life)
+|cffffd100Уют:|r 	|cffffd100Comfort:|r 
+ — как дома!	 — just like home!
+|cff40ff40На смене:|r 	|cff40ff40On shift:|r 
+|cff8080ffСпит... Zzz|r	|cff8080ffSleeping... Zzz|r
+|cffff80ffМалыш появится через|r 	|cffff80ffThe baby will arrive in|r 
+Черты: 	Traits: 
+Черты: не выбраны	Traits: none chosen
+: критически низко!	: critically low!
+пн	Mon
+вт	Tue
+ср	Wed
+чт	Thu
+пт	Fri
+сб	Sat
+вс	Sun
+ночь	night
+утро	morning
+день	day
+вечер	evening
+|cff4fc3f7SimsCraft|r — каталог	|cff4fc3f7SimsCraft|r — catalog
+Купить	Buy
+Переставить ближайшее	Move nearest
+Взять свой ближайший предмет (до 12 м, здания до 45 м) и передвинуть	Take your nearest item (up to 12 m, buildings up to 45 m) and move it
+Продать ближайшее	Sell nearest
+Продать свой ближайший предмет за половину цены	Sell your nearest item for half price
+Предмет появится перед вами — его можно двигать.	The item will appear in front of you — you can move it.
+загрузка...	loading...
+|cff80ff80*|r — с этим можно взаимодействовать	|cff80ff80*|r — you can interact with this
+Расстановка	Placement
+Поворот <	Rotate <
+Вперёд	Forward
+Поворот >	Rotate >
+Влево	Left
+К себе	Toward me
+Вправо	Right
+Выше	Up
+Назад	Back
+Ниже	Down
+Шаг:	Step:
+Шаг сдвига в метрах (поворот: 1 = 15°)	Move step in meters (rotation: 1 = 15°)
+Перед собой	In front of me
+Повернуть ко мне	Face me
+Поставить	Place
+Отмена	Cancel
+Дружба	Friendship
+Романтика	Romance
+Выделите персонажа, NPC или бота и подойдите ближе.	Select a character, NPC or bot and come closer.
+Никто не выделен	Nobody selected
+игрок	player
+бот	bot
+сегодня: дружба +%d/%d, романтика +%d/%d	today: friendship +%d/%d, romance +%d/%d
+Имя	Name
+ребёнка	the child
+Позвать детей	Call the kids
+Отправить домой	Send home
+Обновить	Refresh
+супруг(а)	spouse
+встречаетесь	dating
+Партнёр: |cffff80ff	Partner: |cffff80ff
+Партнёра нет. Познакомьтесь с кем-нибудь в окне «Общение».	No partner. Meet someone in the "Social" window.
+|cffff80ffМалыш появится через 	|cffff80ffThe baby will arrive in 
+%s %s — %s, счастье |cff%s%d%%|r, развитие %d%%%s	%s %s — %s, happiness |cff%s%d%%|r, development %d%%%s
+|cffff9ad5Дочь|r	|cffff9ad5Daughter|r
+|cff8ac8ffСын|r	|cff8ac8ffSon|r
+ |cff80c0ff(с вами)|r	 |cff80c0ff(with you)|r
+ |cff80ff80(дома)|r	 |cff80ff80(at home)|r
+ |cffffb0ff(живёт своей семьёй 	 |cffffb0ff(lives with their own family 
+Детей пока нет.	No children yet.
+%s предлагает: «%s».	%s suggests: "%s".
+Согласиться	Accept
+Отказаться	Decline
+Как назовём %s?	What shall we name %s?
+Готово	Done
+Перестановка: 	Rearranging: 
+Покупка: 	Buying: 
+x %s  y %s  z %s  поворот %s°\n%s	x %s  y %s  z %s  rotation %s°\n%s
+Бесплатно	Free
+Цена: 	Price: 
+Стены	Walls
+дочку	your daughter
+сына	your son
+SimsCraft: панель 	SimsCraft: panel 
+закреплена	locked
+откреплена	unlocked
+Окно SimsCraft	SimsCraft window
+Действие (ближайшая мебель)	Use (nearest furniture)
+Энергичен	Energized
+Флиртует	Flirty
+Сосредоточен	Focused
+Уверен	Confident
+Игрив	Playful
+Грустит	Sad
+Зол	Angry
+Напряжён	Tense
+Смущён	Embarrassed
+Неуютно	Uncomfortable
+Скучает	Bored
+В оцепенении	Dazed
+спокоен	fine
+счастлив	happy
+энергичен	energized
+флиртует	flirty
+сосредоточен	focused
+вдохновлён	inspired
+уверен	confident
+игрив	playful
+грустит	sad
+зол	angry
+напряжён	tense
+смущён	embarrassed
+неуютно	uncomfortable
+скучает	bored
+в оцепенении	dazed
+Фитнес	Fitness
+Логика	Logic
+Обаяние	Charisma
+Живопись	Painting
+Музыка	Music
+Писательство	Writing
+Программирование	Programming
+Мастерство	Handiness
+Садоводство	Gardening
+Рыбалка	Fishing
+Барменство	Mixology
+Комедия	Comedy
+Танцы	Dancing
+Озорство	Mischief
+Видеоигры	Video games
+Мастер кулинарии	Master chef
+Любящий родитель	Loving parent
+Богатство	Fortune
+Творец	Creator
+Учёный	Scientist
+Садовод	Gardener
+Весна	Spring
+Лето	Summer
+Осень	Autumn
+Зима	Winter
+супруги	married
+бывшие	exes
+ваш ребёнок	your child
+ ч	 h
+ мин	 min
+%.1fм	%.1fM
+к	k
+Все действия общения…	All social actions…
+Потребности	Needs
+Навыки	Skills
+Карьера	Career
+Отношения	Relationships
+Стремление и награды	Aspiration and rewards
+Эмоции и мудлеты	Emotions and moodlets
+Телефон: супруг, гости, пицца, врач, счета	Phone: spouse, guests, pizza, doctor, bills
+Каталог мебели, стройка и дома	Furniture catalog, building and houses
+Действие: использовать ближайшую мебель	Use: the nearest furniture
+Дом: обустроить, камера внутри, телепорт домой	House: furnish, interior camera, teleport home
+Обустроить готовый дом (встроенная мебель)	Furnish a ready-made house (built-in furniture)
+Переставить ближайший предмет	Move the nearest item
+Продать ближайший предмет	Sell the nearest item
+Телепорт домой	Teleport home
+Сделать это место домом	Make this place my home
+«Обустроить»: встаньте у кровати, плиты, ванны и т. д. внутри готового дома и отметьте, что это — тогда мебель дома начнёт работать.	"Furnish": stand by a bed, stove, bathtub, etc. inside a ready-made house and mark what it is — then the house furniture starts working.
+Навыков пока нет.\n\nГотовьте, рисуйте, тренируйтесь, читайте, играйте на инструментах, работайте за компьютером, ухаживайте за грядками — навыки появятся сами.	No skills yet.\n\nCook, paint, work out, read, play instruments, use the computer, tend the garden beds — skills will appear on their own.
+Успеваемость	Performance
+Выйти на смену	Go to work
+Выбрать стремление / купить награду	Choose an aspiration / buy a reward
+Имена…	Names…
+|cffffd100Уют дома:|r 	|cffffd100Home comfort:|r 
+|cffffd100Черты:|r 	|cffffd100Traits:|r 
+не выбраны (Хранитель жизни)	none chosen (Keeper of Life)
+Безработный	Unemployed
+ — ранг 	 — rank 
+ из 5	 of 5
+Выберите карьеру у Хранителя жизни	Choose a career at the Keeper of Life
+|cff40ff40На смене:|r осталось 	|cff40ff40On shift:|r remaining 
+.\nВыполняйте задания вокруг вас.	.\nComplete the tasks around you.
+Смена — это задания рядом с вами: кристаллы мага, корзины повара, посты стражи, ящики торговца, сцены артиста, больные лекаря, флажки забега.	A shift means tasks near you: the mage's crystals, the cook's baskets, the guard's posts, the trader's crates, the artist's stages, the healer's patients, the runner's flags.
+Очень 	Very 
+Крайне 	Extremely 
+Стремление не выбрано	No aspiration chosen
+Очки удовлетворения: |cffffffff	Satisfaction points: |cffffffff
+|cffffd100Партнёр:|r 	|cffffd100Partner:|r 
+нет	none
+%s %s — %s, счастье %d%%%s%s	%s %s — %s, happiness %d%%%s%s
+, оценка 	, grade 
+ |cffffb0ff(живёт своей семьёй)|r	 |cffffb0ff(lives with their own family)|r
+|cff888888Детей пока нет.|r	|cff888888No children yet.|r
+  |cffffd100счёт: 	  |cffffd100bill: 
+  |cffff4040свет отключён|r	  |cffff4040power is off|r
+  |cffff8040простуда|r	  |cffff8040cold|r
+Знакомство	New acquaintance
+Тёмный (как подсказки)	Dark (like tooltips)
+Окно WoW (рамка диалога)	WoW window (dialog frame)
+Плоский (тонкая линия)	Flat (thin line)
+Плоский, толстая рамка	Flat, thick border
+Без рамки, только фон	No border, background only
+Прозрачный (без фона)	Transparent (no background)
+Серебро	Silver
+Золото	Gold
+Зелёный Sims	Sims green
+Цвет класса	Class color
+Чёрный	Black
+Бирюза	Turquoise
+Как в WoW	Like WoW
+Плоская	Flat
+Рейдовая	Raid
+Навыки (персонаж)	Skills (character)
+без текста	no text
+Зелёное здоровье	Green health
+Цвет класса у игроков	Class color for players
+SimsCraft: стандартный интерфейс WoW вернётся после /reload.	SimsCraft: the standard WoW interface will return after /reload.
+SimsCraft: перетащите панель. Закрепить — в настройках (/scui config)	SimsCraft: drag the panel. Lock it in the settings (/scui config)
+Щелчок — эмоции и мудлеты	Click — emotions and moodlets
+Левый щелчок: показать / спрятать блок SimsCraft	Left-click: show / hide the SimsCraft block
+Правый щелчок: настройки и внешний вид панели	Right-click: panel settings and appearance
+Shift + правый щелчок: последний раздел SimsCraft	Shift + right-click: last SimsCraft section
+Перетащите, чтобы передвинуть по краю карты	Drag to move it around the minimap edge
+Рамка персонажа	Character frame
+Панели действий WoW	WoW action bars
+Меню и сумки	Menu and bags
+Блок SimsCraft	SimsCraft block
+Рамка цели	Target frame
+SimsCraft — нижняя панель	SimsCraft — bottom panel
+Расположение блоков	Block layout
+Внешний вид панелей	Panel appearance
+Блоки идут слева направо в этом порядке. «Над соседом» ставит блок в тот же столбец поверх предыдущего. Всё применяется сразу.	Blocks go left to right in this order. "Above neighbor" puts a block in the same column on top of the previous one. Everything applies immediately.
+над соседом	above neighbor
+Убрать грифонов (драконов) по краям панели действий	Remove the gryphons (dragons) at the ends of the action bar
+Скрыть стандартные рамки игрока и цели WoW (вернуть — снять и /reload)	Hide the standard WoW player and target frames (to restore: uncheck and /reload)
+Поднимать чат над панелью, чтобы ничего не налезало	Raise the chat above the panel so nothing overlaps
+3-я доп. панель: правая панель WoW — горизонтально над остальными	3rd extra bar: WoW right bar — horizontal above the others
+4-я доп. панель: правая панель 2 WoW — горизонтально над остальными	4th extra bar: WoW right bar 2 — horizontal above the others
+Поменять местами нижние доп. панели (левую и правую)	Swap the bottom extra bars (left and right)
+Живой 3D-портрет (лицо персонажа и цели крупным планом)	Live 3D portrait (close-up of the character's and target's face)
+Закрепить панель (снимите, чтобы перетащить мышью)	Lock the panel (uncheck to drag it with the mouse)
+Встроить SimsCraft в нижнюю панель WoW (выключено — старый вид, нужен /reload)	Embed SimsCraft into the WoW bottom panel (off — old look, needs /reload)
+Масштаб панели	Panel scale
+Если всё не помещается по ширине, панель сама немного уменьшится. Включить доп. панели WoW: Интерфейс → Панели команд.	If everything doesn't fit the width, the panel shrinks a little on its own. Enable extra WoW bars: Interface → ActionBars.
+Сбросить расположение	Reset layout
+Показать / скрыть блок Sims	Show / hide the Sims block
+Щёлкайте по кнопке, чтобы перебрать варианты (правый щелчок — назад). Всё применяется сразу.	Click a button to cycle through options (right-click — back). Everything applies immediately.
+Стиль блоков	Block style
+Цвет рамки	Border color
+Текстура полосок	Bar texture
+Текст на полосках	Bar text
+Цвет здоровья	Health color
+Непрозрачность фона	Background opacity
+Промежуток между блоками	Gap between blocks
+Крупные имена на рамках	Large names on frames
+Классика WoW	Classic WoW
+Тёмный минимал	Dark minimal
+Прозрачный	Transparent
+Готовые наборы:	Presets:
+SimsCraft: рамки WoW скрыты.	SimsCraft: WoW frames hidden.
+SimsCraft: рамки WoW вернутся после /reload.	SimsCraft: WoW frames will return after /reload.

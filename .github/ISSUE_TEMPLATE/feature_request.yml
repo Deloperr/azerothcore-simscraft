@@ -1,0 +1,39 @@
+name: "💡 Idea / Идея"
+description: "Suggest a feature or an improvement / Предложить возможность или улучшение"
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ideas from The Sims, WoW, or your own — all welcome. English or Russian.
+        Идеи из «Симс», из WoW или свои — всё пригодится. Можно по-русски.
+  - type: textarea
+    id: idea
+    attributes:
+      label: "Your idea / Ваша идея"
+      description: "What should SimsCraft do? / Что должно появиться?"
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: "Why? How would you use it? / Зачем? Как вы будете этим пользоваться?"
+  - type: dropdown
+    id: area
+    attributes:
+      label: "Area / Раздел"
+      multiple: true
+      options:
+        - "Needs & emotions / Потребности и эмоции"
+        - "Skills, careers, aspirations / Навыки, карьера, стремления"
+        - "Relationships & family / Отношения и семья"
+        - "Home & furniture / Дом и мебель"
+        - "Living world / Живой мир"
+        - "Addon UI / Интерфейс аддона"
+        - "Installer & docs / Установка и инструкции"
+        - "Other / Другое"
+  - type: textarea
+    id: extra
+    attributes:
+      label: "Anything else? / Что-то ещё?"
+      description: "Screenshots, references to The Sims, WoW models you know of… / Скриншоты, примеры из «Симс», модели WoW…"

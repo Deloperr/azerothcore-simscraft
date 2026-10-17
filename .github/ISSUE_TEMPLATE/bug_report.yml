@@ -1,0 +1,66 @@
+name: "🐞 Bug report / Сообщить об ошибке"
+description: "Something doesn't work as expected / Что-то работает не так"
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report! Please fill in what you can. English or Russian is fine.
+        Спасибо за сообщение! Заполните, что можете. Можно писать по-русски или по-английски.
+  - type: textarea
+    id: what
+    attributes:
+      label: "What happened? / Что случилось?"
+      description: "Describe the problem. / Опишите проблему."
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: "Steps to reproduce / Как повторить"
+      placeholder: |
+        1. Married an NPC… / Женился на NPC…
+        2. Went home… / Пошёл домой…
+        3. …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: "What did you expect? / Что ожидалось?"
+  - type: input
+    id: version
+    attributes:
+      label: "SimsCraft version / Версия SimsCraft"
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: "How is the server installed? / Как установлен сервер?"
+      options:
+        - "Windows installer / установщик Windows"
+        - "macOS installer / установщик macOS"
+        - "Linux installer / установщик Linux"
+        - "My own AzerothCore server / свой сервер AzerothCore"
+    validations:
+      required: true
+  - type: dropdown
+    id: clientlang
+    attributes:
+      label: "Client language / Язык клиента"
+      options: ["enUS / enGB", "ruRU", "other / другой"]
+  - type: textarea
+    id: logs
+    attributes:
+      label: "Logs / Логи"
+      description: |
+        Server crashes or disconnects: run collect-logs (collect-logs.bat / Collect logs.command / ./collect-logs.sh) and attach server-logs.txt. Lua errors in game: copy the text.
+        Падения и вылеты: запустите сбор логов (collect-logs.bat / Collect logs.command / ./collect-logs.sh) и приложите server-logs.txt. Ошибки Lua в игре: скопируйте текст.
+      render: text
+  - type: textarea
+    id: screens
+    attributes:
+      label: "Screenshots / Скриншоты"
+      description: "Drag images here. / Перетащите картинки сюда."

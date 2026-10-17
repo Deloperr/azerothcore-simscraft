@@ -1,0 +1,12 @@
+## Interface: 30300
+## Title: |cff4fc3f7SimsCraft|r
+## Notes: The Sims-style life simulation UI for the SimsCraft server mod (AzerothCore)
+## Notes-ruRU: Интерфейс жизненного симулятора «Симс» для серверного мода SimsCraft (AzerothCore)
+## Author: SimsCraft
+## Version: 1.0.0
+## X-Website: https://github.com/Deloperr/azerothcore-simscraft
+## SavedVariablesPerCharacter: SimsCraftDB
+
+Locale.lua
+SimsCraft.lua
+SimsUI.lua
